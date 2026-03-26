@@ -95,6 +95,54 @@ def format_match_details(match: V4MatchData) -> str:
             },
         }
 
+    kills = []
+    for k in match.kills:
+        kills.append({
+            "round": k.round,
+            "time_in_round_ms": k.time_in_round_in_ms,
+            "killer": f"{k.killer.name}#{k.killer.tag} ({k.killer.team})",
+            "victim": f"{k.victim.name}#{k.victim.tag} ({k.victim.team})",
+            "weapon": k.weapon.name or "Ability",
+            "location": {"x": k.location.x, "y": k.location.y},
+            "assistants": [f"{a.name}#{a.tag}" for a in k.assistants],
+        })
+
+    rounds = []
+    for r in match.rounds:
+        round_data = {
+            "round": r.id,
+            "result": r.result,
+            "winning_team": r.winning_team,
+        }
+        if r.plant:
+            round_data["plant"] = {
+                "site": r.plant.site,
+                "time_ms": r.plant.round_time_in_ms,
+                "player": f"{r.plant.player.name}#{r.plant.player.tag}",
+            }
+        if r.defuse:
+            round_data["defuse"] = {
+                "time_ms": r.defuse.round_time_in_ms,
+                "player": f"{r.defuse.player.name}#{r.defuse.player.tag}",
+            }
+        rounds.append(round_data)
+
+    # Compute first bloods
+    first_bloods = {}
+    first_deaths = {}
+    for k in match.kills:
+        r = k.round
+        if r not in first_bloods:
+            first_bloods[r] = f"{k.killer.name}#{k.killer.tag}"
+            first_deaths[r] = f"{k.victim.name}#{k.victim.tag}"
+
+    fb_counts = {}
+    fd_counts = {}
+    for name in first_bloods.values():
+        fb_counts[name] = fb_counts.get(name, 0) + 1
+    for name in first_deaths.values():
+        fd_counts[name] = fd_counts.get(name, 0) + 1
+
     result = {
         "match_id": match.metadata.match_id,
         "map": match.metadata.map.name,
@@ -110,6 +158,10 @@ def format_match_details(match: V4MatchData) -> str:
             "rounds": f"{blue_result.rounds.won}-{blue_result.rounds.lost}",
             "players": [format_player(p) for p in blue_team],
         },
+        "first_blood_counts": fb_counts,
+        "first_death_counts": fd_counts,
+        "kills": kills,
+        "rounds": rounds,
     }
     return json.dumps(result, indent=2)
 
