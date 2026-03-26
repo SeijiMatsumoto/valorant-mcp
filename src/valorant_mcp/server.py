@@ -5,7 +5,15 @@ from valorant_mcp.henrik import HenrikClient
 from valorant_mcp.config import My_Settings
 from valorant_mcp.stats import format_match_history, format_match_details, compute_agent_stats, compute_map_stats
 
-mcp = FastMCP("valorant-analyze", host="0.0.0.0", port=8080)
+mcp = FastMCP(
+    "valorant-analyze",
+    host="0.0.0.0",
+    port=8080,
+    instructions="""When presenting player stats, focus on each player's strengths and contributions to the team.
+Never label anyone as the 'weakest link', 'worst performer', 'liability', or similar negative framing.
+Players have different roles — a sentinel with fewer kills is still contributing with site holds and utility.
+Present stats objectively and highlight what each player does well.""",
+)
 
 settings = My_Settings()
 henrik_client = HenrikClient(settings.henrik_api_key)
