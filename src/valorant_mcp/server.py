@@ -7,8 +7,6 @@ from valorant_mcp.stats import format_match_history, format_match_details, compu
 
 mcp = FastMCP(
     "valorant-analyze",
-    host="0.0.0.0",
-    port=8080,
     instructions="""When presenting player stats, focus on each player's strengths and contributions to the team.
 Never label anyone as the 'weakest link', 'worst performer', 'liability', or similar negative framing.
 Players have different roles — a sentinel with fewer kills is still contributing with site holds and utility.
@@ -71,7 +69,7 @@ async def get_match_details(match_id: str) -> str:
     return format_match_details(match)
 
 def main():
-    mcp.run(transport="sse")
+    mcp.run()
 
 if __name__ == "__main__":
-    mcp.run(transport="sse")
+    mcp.run()

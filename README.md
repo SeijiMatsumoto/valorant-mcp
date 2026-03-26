@@ -10,41 +10,12 @@ Powered by [Henrik's Unofficial Valorant API](https://docs.henrikdev.xyz/valoran
 |------|-------------|
 | `get_player_info` | Fetch basic account info for a Riot ID |
 | `get_match_history` | Recent competitive match history with detailed stats for you and teammates |
-| `get_match_details` | Full breakdown of a specific match by match ID |
+| `get_match_details` | Full breakdown of a specific match including kills, rounds, and first bloods |
 | `get_agent_stats` | Aggregated per-agent stats: win rate, avg KDA, avg score |
 | `get_map_stats` | Aggregated per-map stats: win rate, avg score |
 | `get_rank_progression` | Current rank, elo, peak rank, and season history |
 
-## Quick Start (Remote)
-
-The server is hosted remotely — no Python or API key needed on your end.
-
-### Claude Code
-
-```bash
-claude mcp add valorant-analyzer --transport sse https://valorant-mcp.fly.dev/sse
-```
-
-### Claude Desktop
-
-Requires [Node.js](https://nodejs.org/) for the `mcp-remote` bridge.
-
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "valorant-analyzer": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://valorant-mcp.fly.dev/sse"]
-    }
-  }
-}
-```
-
-## Self-Hosted Setup
-
-If you'd prefer to run the server yourself with your own API key:
+## Setup
 
 ### Prerequisites
 
@@ -58,6 +29,8 @@ claude mcp add valorant-analyzer -e HENRIK_API_KEY=your-key-here -e VALORANT_REG
 ```
 
 ### Claude Desktop
+
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
 ```json
 {
@@ -115,7 +88,6 @@ uv run pytest src/valorant_mcp/tests/ -v
 - [httpx](https://www.python-httpx.org/) — async HTTP client
 - [Pydantic](https://docs.pydantic.dev/) — data validation
 - [uv](https://docs.astral.sh/uv/) — package management
-- [Fly.io](https://fly.io/) — remote hosting
 
 ## License
 
