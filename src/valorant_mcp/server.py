@@ -5,7 +5,7 @@ from valorant_mcp.henrik import HenrikClient
 from valorant_mcp.config import My_Settings
 from valorant_mcp.stats import format_match_history, format_match_details, compute_agent_stats, compute_map_stats
 
-mcp = FastMCP("valorant-analyze")
+mcp = FastMCP("valorant-analyze", host="0.0.0.0", port=8080)
 
 settings = My_Settings()
 henrik_client = HenrikClient(settings.henrik_api_key)
@@ -63,7 +63,7 @@ async def get_match_details(match_id: str) -> str:
     return format_match_details(match)
 
 def main():
-    mcp.run()
+    mcp.run(transport="sse")
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="sse")
