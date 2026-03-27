@@ -13,6 +13,7 @@ Powered by [Henrik's Unofficial Valorant API](https://docs.henrikdev.xyz/valoran
 | `get_match_details` | Full breakdown of a specific match including kills, rounds, and first bloods |
 | `get_agent_stats` | Aggregated per-agent stats: win rate, avg KDA, avg score |
 | `get_map_stats` | Aggregated per-map stats: win rate, avg score |
+| `get_weapon_stats` | Weapon usage stats: kills per weapon, usage percentage |
 | `get_rank_progression` | Current rank, elo, peak rank, and season history |
 
 ## Setup
@@ -20,12 +21,12 @@ Powered by [Henrik's Unofficial Valorant API](https://docs.henrikdev.xyz/valoran
 ### Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) package manager
-- A [Henrik API key](https://docs.henrikdev.xyz/valorant/general)
+- A [Henrik API key](https://api.henrikdev.xyz/dashboard/)
 
 ### Claude Code
 
 ```bash
-claude mcp add valorant-analyzer -e HENRIK_API_KEY=your-key-here -e VALORANT_REGION=na -- uvx valorant-mcp
+claude mcp add valorant-analyzer -e HENRIK_API_KEY=your-key-here -- uvx valorant-mcp
 ```
 
 ### Claude Desktop
@@ -39,8 +40,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
       "command": "uvx",
       "args": ["valorant-mcp"],
       "env": {
-        "HENRIK_API_KEY": "your-key-here",
-        "VALORANT_REGION": "na"
+        "HENRIK_API_KEY": "your-key-here"
       }
     }
   }
@@ -61,7 +61,6 @@ Create a `.env` file in the project root:
 
 ```
 HENRIK_API_KEY=your-api-key-here
-VALORANT_REGION=na
 ```
 
 ### Run the server
