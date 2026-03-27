@@ -43,11 +43,11 @@ class HenrikClient():
             data = self._check_response(response)
             return PlayerInfo(**data)
 
-    async def get_match_history(self, username: str, region: str, count: int):
+    async def get_match_history(self, username: str, region: str, count: int, mode: str = "competitive"):
         name, tag = self._parse_username(username)
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_url}/v3/matches/{region}/{name}/{tag}?mode=competitive&size={count}",
+                f"{self.base_url}/v3/matches/{region}/{name}/{tag}?mode={mode}&size={count}",
                 headers={"Authorization": self.api_key}
             )
             data = self._check_response(response)

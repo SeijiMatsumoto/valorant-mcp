@@ -237,3 +237,31 @@ def compute_map_stats(matches: list[MatchData], name: str, tag: str) -> str:
             "avg_score": round(stats["score"] / g, 0),
         }
     return json.dumps(result, indent=2)
+
+
+def compute_weapon_stats(matches: list[V4MatchData], name: str, tag: str) -> str:
+    weapon_stats = {}
+    full_name = f"{name}#{tag}".lower()
+
+    for match in matches:
+        for kill in match.kills:
+            killer_name = f"{kill.killer.name}#{kill.killer.tag}".lower()
+            if killer_name != full_name:
+                continue
+
+            weapon_name = kill.weapon.name or "Ability"
+            if weapon_name not in weapon_stats:
+                weapon_stats[weapon_name] = {"kills": 0}
+
+            weapon_stats[weapon_name]["kills"] += 1
+
+    sorted_weapons = dict(sorted(weapon_stats.items(), key=lambda x: x[1]["kills"], reverse=True))
+
+    total_kills = sum(w["kills"] for w in sorted_weapons.values())
+    result = {"total_kills": total_kills, "matches_analyzed": len(matches), "weapons": {}}
+    for weapon, stats in sorted_weapons.items():
+        result["weapons"][weapon] = {
+            "kills": stats["kills"],
+            "usage_pct": f"{(stats['kills'] / total_kills) * 100:.0f}%" if total_kills > 0 else "0%",
+        }
+    return json.dumps(result, indent=2)

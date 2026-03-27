@@ -3,7 +3,7 @@ from mcp.server.fastmcp import FastMCP
 from valorant_mcp.models import PlayerInfo
 from valorant_mcp.henrik import HenrikClient
 from valorant_mcp.config import My_Settings
-from valorant_mcp.stats import format_match_history, format_match_details, compute_agent_stats, compute_map_stats
+from valorant_mcp.stats import format_match_history, format_match_details, compute_agent_stats, compute_map_stats, compute_weapon_stats
 
 mcp = FastMCP(
     "valorant-analyze",
@@ -25,12 +25,12 @@ async def get_player_info(username: str) -> PlayerInfo:
 
 @mcp.tool(
     name="get_match_history",
-    description="Fetch recent competitive match history for a player. Returns a readable summary of each match including the player's stats, teammates, and opponents."
+    description="Fetch recent match history for a player. Returns a readable summary of each match including the player's stats, teammates, and opponents. Mode defaults to competitive but can be changed to unrated, deathmatch, swiftplay, spikerush, or premier."
 )
-async def get_match_history(username: str, count: int = 5) -> str:
+async def get_match_history(username: str, count: int = 5, mode: str = "competitive") -> str:
     name, tag = henrik_client._parse_username(username)
     count = min(count, 10)
-    matches = await henrik_client.get_match_history(username, settings.valorant_region, count)
+    matches = await henrik_client.get_match_history(username, settings.valorant_region, count, mode)
     return format_match_history(matches, name, tag)
 
 @mcp.tool(
@@ -45,20 +45,35 @@ async def get_rank_progression(username: str) -> str:
     name="get_agent_stats",
     description="Get aggregated per-agent stats from a player's recent matches: games played, wins, losses, win rate, avg kills/deaths/assists/score"
 )
-async def get_agent_stats(username: str, count: int = 20) -> str:
+async def get_agent_stats(username: str, count: int = 20, mode: str = "competitive") -> str:
     name, tag = henrik_client._parse_username(username)
     count = min(count, 10)
-    matches = await henrik_client.get_match_history(username, settings.valorant_region, count)
+    matches = await henrik_client.get_match_history(username, settings.valorant_region, count, mode)
     return compute_agent_stats(matches, name, tag)
 
 @mcp.tool(
     name="get_map_stats",
     description="Get aggregated per-map stats from a player's recent matches: games played, wins, losses, win rate, avg score"
 )
-async def get_map_stats(username: str, count: int = 20) -> str:
+async def get_map_stats(username: str, count: int = 20, mode: str = "competitive") -> str:
     name, tag = henrik_client._parse_username(username)
-    matches = await henrik_client.get_match_history(username, settings.valorant_region, count)
+    count = min(count, 10)
+    matches = await henrik_client.get_match_history(username, settings.valorant_region, count, mode)
     return compute_map_stats(matches, name, tag)
+
+@mcp.tool(
+    name="get_weapon_stats",
+    description="Get weapon usage stats from a player's recent matches: kills per weapon, usage percentage. Shows which guns and abilities a player gets the most kills with."
+)
+async def get_weapon_stats(username: str, count: int = 5, mode: str = "competitive") -> str:
+    name, tag = henrik_client._parse_username(username)
+    count = min(count, 5)
+    matches = await henrik_client.get_match_history(username, settings.valorant_region, count, mode)
+    v4_matches = []
+    for match in matches:
+        v4 = await henrik_client.get_match(settings.valorant_region, match.metadata.matchid)
+        v4_matches.append(v4)
+    return compute_weapon_stats(v4_matches, name, tag)
 
 @mcp.tool(
     name="get_match_details",
