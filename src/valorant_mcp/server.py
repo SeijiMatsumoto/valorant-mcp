@@ -1,9 +1,11 @@
+from typing import Literal
+
 from mcp.server.fastmcp import FastMCP
 
 from valorant_mcp.models import PlayerInfo
 from valorant_mcp.henrik import HenrikClient
 from valorant_mcp.config import My_Settings
-from valorant_mcp.stats import format_match_history, format_match_details, compute_agent_stats, compute_map_stats, compute_weapon_stats
+from valorant_mcp.stats import format_match_history, format_match_details, format_match_narrative, compute_agent_stats, compute_map_stats, compute_weapon_stats
 
 mcp = FastMCP(
     "valorant-analyze",
@@ -77,10 +79,22 @@ async def get_weapon_stats(username: str, count: int = 5, mode: str = "competiti
 
 @mcp.tool(
     name="get_match_details",
-    description="Get full details of a specific match by match ID, including all players, stats, and results"
+    description=(
+        "Get full details of a specific match by match ID. "
+        "`view=summary` (default): per-player stats, team totals, kill list, round results, economy — best for stat or aggregate questions. "
+        "`view=narrative`: round-by-round event timeline with attack/defense sides labeled, named map zones (A Site, Mid, B Long, etc.), "
+        "and event tags (entry, first_blood, trade, rotation) — best for story/spatial questions like 'which round did we rotate from B to A' "
+        "or 'where do we usually die on attack'."
+    )
 )
-async def get_match_details(match_id: str, region: str = "na") -> str:
+async def get_match_details(
+    match_id: str,
+    region: str = "na",
+    view: Literal["summary", "narrative"] = "summary",
+) -> str:
     match = await henrik_client.get_match(region, match_id)
+    if view == "narrative":
+        return await format_match_narrative(match)
     return format_match_details(match)
 
 def main():
