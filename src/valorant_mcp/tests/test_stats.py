@@ -10,30 +10,30 @@ from .conftest import make_player, make_match, make_v4_player, make_v4_match
 
 class TestFindPlayer:
     def test_finds_exact_match(self):
-        player = make_player(name="SayGG", tag="11111")
+        player = make_player(name="TenZ", tag="00005")
         match = make_match([player])
-        assert _find_player(match, "SayGG", "11111") == player
+        assert _find_player(match, "TenZ", "00005") == player
 
     def test_case_insensitive(self):
-        player = make_player(name="SayGG", tag="11111")
+        player = make_player(name="TenZ", tag="00005")
         match = make_match([player])
-        assert _find_player(match, "saygg", "11111") == player
+        assert _find_player(match, "tenz", "00005") == player
 
     def test_returns_none_when_not_found(self):
-        player = make_player(name="SayGG", tag="11111")
+        player = make_player(name="TenZ", tag="00005")
         match = make_match([player])
         assert _find_player(match, "Other", "99999") is None
 
     def test_empty_match(self):
         match = make_match([])
-        assert _find_player(match, "SayGG", "11111") is None
+        assert _find_player(match, "TenZ", "00005") is None
 
 
 # --- format_match_history ---
 
 class TestFormatMatchHistory:
     def _make_full_match(self):
-        me = make_player(name="SayGG", tag="11111", team="Red", character="Jett",
+        me = make_player(name="TenZ", tag="00005", team="Red", character="Jett",
                          kills=20, deaths=10, assists=5, headshots=10, bodyshots=20, legshots=0,
                          damage_made=4000, damage_received=2000)
         teammate = make_player(name="Ally", tag="0001", team="Red", character="Sage",
@@ -45,14 +45,14 @@ class TestFormatMatchHistory:
 
     def test_returns_valid_json(self):
         match = self._make_full_match()
-        result = format_match_history([match], "SayGG", "11111")
+        result = format_match_history([match], "TenZ", "00005")
         parsed = json.loads(result)
         assert isinstance(parsed, list)
         assert len(parsed) == 1
 
     def test_player_stats_included(self):
         match = self._make_full_match()
-        result = json.loads(format_match_history([match], "SayGG", "11111"))
+        result = json.loads(format_match_history([match], "TenZ", "00005"))
         player = result[0]["player"]
         assert player["kda"] == "20/10/5"
         assert player["agent"] == "Jett"
@@ -63,7 +63,7 @@ class TestFormatMatchHistory:
 
     def test_teammate_stats_included(self):
         match = self._make_full_match()
-        result = json.loads(format_match_history([match], "SayGG", "11111"))
+        result = json.loads(format_match_history([match], "TenZ", "00005"))
         teammates = result[0]["teammates"]
         assert len(teammates) == 1
         tm = teammates[0]
@@ -74,13 +74,13 @@ class TestFormatMatchHistory:
 
     def test_player_not_in_teammates(self):
         match = self._make_full_match()
-        result = json.loads(format_match_history([match], "SayGG", "11111"))
+        result = json.loads(format_match_history([match], "TenZ", "00005"))
         teammate_names = [t["name"] for t in result[0]["teammates"]]
-        assert "SayGG#11111" not in teammate_names
+        assert "TenZ#00005" not in teammate_names
 
     def test_opponents_are_simple_strings(self):
         match = self._make_full_match()
-        result = json.loads(format_match_history([match], "SayGG", "11111"))
+        result = json.loads(format_match_history([match], "TenZ", "00005"))
         opponents = result[0]["opponents"]
         assert len(opponents) == 1
         assert isinstance(opponents[0], str)
@@ -88,27 +88,27 @@ class TestFormatMatchHistory:
 
     def test_win_loss_result(self):
         match = self._make_full_match()
-        result = json.loads(format_match_history([match], "SayGG", "11111"))
+        result = json.loads(format_match_history([match], "TenZ", "00005"))
         assert result[0]["result"] == "Win"
 
     def test_loss_result(self):
-        me = make_player(name="SayGG", tag="11111", team="Blue")
+        me = make_player(name="TenZ", tag="00005", team="Blue")
         match = make_match([me], red_won=True)
-        result = json.loads(format_match_history([match], "SayGG", "11111"))
+        result = json.loads(format_match_history([match], "TenZ", "00005"))
         assert result[0]["result"] == "Loss"
 
     def test_skips_match_without_player(self):
         other = make_player(name="Other", tag="0000", team="Red")
         match = make_match([other])
-        result = json.loads(format_match_history([match], "SayGG", "11111"))
+        result = json.loads(format_match_history([match], "TenZ", "00005"))
         assert len(result) == 0
 
     def test_multiple_matches(self):
-        me1 = make_player(name="SayGG", tag="11111", team="Red")
-        me2 = make_player(name="SayGG", tag="11111", team="Blue")
+        me1 = make_player(name="TenZ", tag="00005", team="Red")
+        me2 = make_player(name="TenZ", tag="00005", team="Blue")
         match1 = make_match([me1], matchid="m1", map_name="Bind")
         match2 = make_match([me2], matchid="m2", map_name="Haven", red_won=False)
-        result = json.loads(format_match_history([match1, match2], "SayGG", "11111"))
+        result = json.loads(format_match_history([match1, match2], "TenZ", "00005"))
         assert len(result) == 2
         assert result[0]["map"] == "Bind"
         assert result[1]["map"] == "Haven"
@@ -118,7 +118,7 @@ class TestFormatMatchHistory:
 
 class TestFormatMatchDetails:
     def _make_v4_match(self):
-        red1 = make_v4_player(name="SayGG", tag="11111", team_id="Red", agent_name="Jett",
+        red1 = make_v4_player(name="TenZ", tag="00005", team_id="Red", agent_name="Jett",
                               kills=20, deaths=10, assists=5, headshots=10, bodyshots=20, legshots=0,
                               damage_dealt=4000, damage_received=2000)
         red2 = make_v4_player(name="Ally", tag="0001", team_id="Red", agent_name="Sage",
@@ -165,10 +165,10 @@ class TestFormatMatchDetails:
 
 class TestComputeAgentStats:
     def test_single_agent(self):
-        me = make_player(name="SayGG", tag="11111", character="Jett",
+        me = make_player(name="TenZ", tag="00005", character="Jett",
                          kills=20, deaths=10, assists=5)
         match = make_match([me], red_won=True)
-        result = json.loads(compute_agent_stats([match], "SayGG", "11111"))
+        result = json.loads(compute_agent_stats([match], "TenZ", "00005"))
         assert "Jett" in result
         assert result["Jett"]["games"] == 1
         assert result["Jett"]["wins"] == 1
@@ -176,11 +176,11 @@ class TestComputeAgentStats:
         assert result["Jett"]["win_rate"] == "100%"
 
     def test_multiple_games_same_agent(self):
-        me1 = make_player(name="SayGG", tag="11111", character="Jett", kills=20, deaths=10, assists=5)
-        me2 = make_player(name="SayGG", tag="11111", character="Jett", kills=10, deaths=15, assists=3)
+        me1 = make_player(name="TenZ", tag="00005", character="Jett", kills=20, deaths=10, assists=5)
+        me2 = make_player(name="TenZ", tag="00005", character="Jett", kills=10, deaths=15, assists=3)
         match1 = make_match([me1], red_won=True, matchid="m1")
         match2 = make_match([me2], red_won=False, matchid="m2")
-        result = json.loads(compute_agent_stats([match1, match2], "SayGG", "11111"))
+        result = json.loads(compute_agent_stats([match1, match2], "TenZ", "00005"))
         assert result["Jett"]["games"] == 2
         assert result["Jett"]["wins"] == 1
         assert result["Jett"]["losses"] == 1
@@ -188,11 +188,11 @@ class TestComputeAgentStats:
         assert result["Jett"]["avg_kills"] == 15.0
 
     def test_multiple_agents(self):
-        me1 = make_player(name="SayGG", tag="11111", character="Jett", kills=20, deaths=10, assists=5)
-        me2 = make_player(name="SayGG", tag="11111", character="Sage", kills=10, deaths=8, assists=15)
+        me1 = make_player(name="TenZ", tag="00005", character="Jett", kills=20, deaths=10, assists=5)
+        me2 = make_player(name="TenZ", tag="00005", character="Sage", kills=10, deaths=8, assists=15)
         match1 = make_match([me1], matchid="m1")
         match2 = make_match([me2], matchid="m2")
-        result = json.loads(compute_agent_stats([match1, match2], "SayGG", "11111"))
+        result = json.loads(compute_agent_stats([match1, match2], "TenZ", "00005"))
         assert "Jett" in result
         assert "Sage" in result
         assert result["Jett"]["games"] == 1
@@ -201,7 +201,7 @@ class TestComputeAgentStats:
     def test_skips_matches_without_player(self):
         other = make_player(name="Other", tag="0000", character="Jett")
         match = make_match([other])
-        result = json.loads(compute_agent_stats([match], "SayGG", "11111"))
+        result = json.loads(compute_agent_stats([match], "TenZ", "00005"))
         assert result == {}
 
 
@@ -209,30 +209,30 @@ class TestComputeAgentStats:
 
 class TestComputeMapStats:
     def test_single_map(self):
-        me = make_player(name="SayGG", tag="11111")
+        me = make_player(name="TenZ", tag="00005")
         match = make_match([me], map_name="Bind", red_won=True)
-        result = json.loads(compute_map_stats([match], "SayGG", "11111"))
+        result = json.loads(compute_map_stats([match], "TenZ", "00005"))
         assert "Bind" in result
         assert result["Bind"]["games"] == 1
         assert result["Bind"]["wins"] == 1
         assert result["Bind"]["win_rate"] == "100%"
 
     def test_multiple_maps(self):
-        me1 = make_player(name="SayGG", tag="11111")
-        me2 = make_player(name="SayGG", tag="11111")
+        me1 = make_player(name="TenZ", tag="00005")
+        me2 = make_player(name="TenZ", tag="00005")
         match1 = make_match([me1], map_name="Bind", matchid="m1", red_won=True)
         match2 = make_match([me2], map_name="Haven", matchid="m2", red_won=False)
-        result = json.loads(compute_map_stats([match1, match2], "SayGG", "11111"))
+        result = json.loads(compute_map_stats([match1, match2], "TenZ", "00005"))
         assert result["Bind"]["wins"] == 1
         assert result["Haven"]["wins"] == 0
         assert result["Haven"]["losses"] == 1
 
     def test_same_map_multiple_games(self):
-        me1 = make_player(name="SayGG", tag="11111", kills=20, deaths=10, assists=5)
-        me2 = make_player(name="SayGG", tag="11111", kills=10, deaths=15, assists=3)
+        me1 = make_player(name="TenZ", tag="00005", kills=20, deaths=10, assists=5)
+        me2 = make_player(name="TenZ", tag="00005", kills=10, deaths=15, assists=3)
         match1 = make_match([me1], map_name="Bind", matchid="m1", red_won=True)
         match2 = make_match([me2], map_name="Bind", matchid="m2", red_won=False)
-        result = json.loads(compute_map_stats([match1, match2], "SayGG", "11111"))
+        result = json.loads(compute_map_stats([match1, match2], "TenZ", "00005"))
         assert result["Bind"]["games"] == 2
         assert result["Bind"]["wins"] == 1
         assert result["Bind"]["win_rate"] == "50%"
@@ -240,5 +240,5 @@ class TestComputeMapStats:
     def test_empty_when_player_not_found(self):
         other = make_player(name="Other", tag="0000")
         match = make_match([other], map_name="Bind")
-        result = json.loads(compute_map_stats([match], "SayGG", "11111"))
+        result = json.loads(compute_map_stats([match], "TenZ", "00005"))
         assert result == {}

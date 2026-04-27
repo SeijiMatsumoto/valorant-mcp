@@ -9,8 +9,8 @@ Powered by [Henrik's Unofficial Valorant API](https://docs.henrikdev.xyz/valoran
 | Tool | Description |
 |------|-------------|
 | `get_player_info` | Fetch basic account info for a Riot ID |
-| `get_match_history` | Recent competitive match history with detailed stats for you and teammates |
-| `get_match_details` | Full breakdown of a specific match including kills, rounds, and first bloods |
+| `get_match_history` | Recent match history with stats for you and teammates (competitive by default; also supports unrated, deathmatch, swiftplay, spikerush, premier) |
+| `get_match_details` | Full breakdown of a specific match. `summary` view (default): per-player stats, team totals, kill list, round results, economy. `narrative` view: round-by-round timeline with named map zones (A Site, Mid, B Long, etc.) and event tags (entry, first_blood, trade, rotation) |
 | `get_agent_stats` | Aggregated per-agent stats: win rate, avg KDA, avg score |
 | `get_map_stats` | Aggregated per-map stats: win rate, avg score |
 | `get_weapon_stats` | Weapon usage stats: kills per weapon, usage percentage |
@@ -20,7 +20,11 @@ Powered by [Henrik's Unofficial Valorant API](https://docs.henrikdev.xyz/valoran
 
 ### Prerequisites
 
-- [uv](https://docs.astral.sh/uv/) package manager
+- [uv](https://docs.astral.sh/uv/) package manager:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+  (Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`)
 - A [Henrik API key](https://api.henrikdev.xyz/dashboard/)
 
 ### Claude Code
@@ -46,8 +50,6 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
   }
 }
 ```
-
-Supported regions: `na`, `eu`, `ap`, `kr`
 
 ## Local Development
 

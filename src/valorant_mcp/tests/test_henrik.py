@@ -12,9 +12,9 @@ def client():
 
 class TestParseUsername:
     def test_splits_name_and_tag(self, client):
-        name, tag = client._parse_username("SayGG#11111")
-        assert name == "SayGG"
-        assert tag == "11111"
+        name, tag = client._parse_username("TenZ#00005")
+        assert name == "TenZ"
+        assert tag == "00005"
 
     def test_raises_on_invalid_format(self, client):
         with pytest.raises(ValueError):
@@ -25,37 +25,37 @@ class TestGetPlayerInfo:
     @respx.mock
     @pytest.mark.asyncio
     async def test_returns_player_info(self, client):
-        respx.get("https://api.henrikdev.xyz/valorant/v1/account/SayGG/11111").mock(
+        respx.get("https://api.henrikdev.xyz/valorant/v1/account/TenZ/00005").mock(
             return_value=httpx.Response(200, json={
                 "data": {
                     "puuid": "abc-123",
                     "region": "na",
                     "account_level": 100,
-                    "name": "SayGG",
-                    "tag": "11111",
+                    "name": "TenZ",
+                    "tag": "00005",
                 }
             })
         )
-        result = await client.get_player_info("SayGG#11111")
+        result = await client.get_player_info("TenZ#00005")
         assert isinstance(result, PlayerInfo)
-        assert result.name == "SayGG"
+        assert result.name == "TenZ"
         assert result.account_level == 100
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_sends_auth_header(self, client):
-        route = respx.get("https://api.henrikdev.xyz/valorant/v1/account/SayGG/11111").mock(
+        route = respx.get("https://api.henrikdev.xyz/valorant/v1/account/TenZ/00005").mock(
             return_value=httpx.Response(200, json={
                 "data": {
                     "puuid": "abc-123",
                     "region": "na",
                     "account_level": 100,
-                    "name": "SayGG",
-                    "tag": "11111",
+                    "name": "TenZ",
+                    "tag": "00005",
                 }
             })
         )
-        await client.get_player_info("SayGG#11111")
+        await client.get_player_info("TenZ#00005")
         assert route.calls[0].request.headers["Authorization"] == "test-key"
 
 
@@ -64,7 +64,7 @@ class TestGetMatchHistory:
     @pytest.mark.asyncio
     async def test_returns_match_list(self, client):
         respx.get(
-            "https://api.henrikdev.xyz/valorant/v3/matches/na/SayGG/11111",
+            "https://api.henrikdev.xyz/valorant/v3/matches/na/TenZ/00005",
             params={"mode": "competitive", "size": "5"},
         ).mock(
             return_value=httpx.Response(200, json={
@@ -78,8 +78,8 @@ class TestGetMatchHistory:
                         "players": {
                             "all_players": [
                                 {
-                                    "name": "SayGG",
-                                    "tag": "11111",
+                                    "name": "TenZ",
+                                    "tag": "00005",
                                     "character": "Jett",
                                     "team": "Red",
                                     "currenttier_patched": "Gold 2",
@@ -111,7 +111,7 @@ class TestGetMatchHistory:
                 ]
             })
         )
-        result = await client.get_match_history("SayGG#11111", "na", 5)
+        result = await client.get_match_history("TenZ#00005", "na", 5)
         assert len(result) == 1
         assert result[0].metadata.map == "Bind"
 
@@ -120,11 +120,11 @@ class TestGetMMR:
     @respx.mock
     @pytest.mark.asyncio
     async def test_returns_mmr_data(self, client):
-        respx.get("https://api.henrikdev.xyz/valorant/v2/mmr/na/SayGG/11111").mock(
+        respx.get("https://api.henrikdev.xyz/valorant/v2/mmr/na/TenZ/00005").mock(
             return_value=httpx.Response(200, json={
                 "data": {
-                    "name": "SayGG",
-                    "tag": "11111",
+                    "name": "TenZ",
+                    "tag": "00005",
                     "current_data": {
                         "currenttierpatched": "Gold 2",
                         "ranking_in_tier": 45,
@@ -136,6 +136,6 @@ class TestGetMMR:
                 }
             })
         )
-        result = await client.get_mmr("SayGG#11111", "na")
+        result = await client.get_mmr("TenZ#00005", "na")
         assert result.current_data.currenttierpatched == "Gold 2"
         assert result.current_data.elo == 945

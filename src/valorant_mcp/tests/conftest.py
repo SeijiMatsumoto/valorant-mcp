@@ -7,7 +7,7 @@ from valorant_mcp.models import (
 )
 
 
-def make_player(name="SayGG", tag="11111", character="Jett", team="Red",
+def make_player(name="TenZ", tag="00005", character="Jett", team="Red",
                 rank="Gold 2", kills=20, deaths=15, assists=5,
                 headshots=10, bodyshots=30, legshots=2,
                 damage_made=3000, damage_received=2500,
@@ -60,7 +60,7 @@ def make_match(players_all, red_won=True, rounds_won=13, rounds_lost=9,
     )
 
 
-def make_v4_player(name="SayGG", tag="11111", team_id="Red",
+def make_v4_player(name="TenZ", tag="00005", team_id="Red",
                    agent_name="Jett", agent_id="add6443a-41bd-e414-f6ad-e58d267f4e95",
                    rank="Gold 2", tier_id=13,
                    kills=20, deaths=15, assists=5,

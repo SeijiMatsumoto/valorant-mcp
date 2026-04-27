@@ -11,11 +11,11 @@ class TestPlayerInfo:
             "puuid": "abc-123",
             "region": "na",
             "account_level": 100,
-            "name": "SayGG",
-            "tag": "11111",
+            "name": "TenZ",
+            "tag": "00005",
         }
         player = PlayerInfo(**data)
-        assert player.name == "SayGG"
+        assert player.name == "TenZ"
         assert player.puuid == "abc-123"
         assert player.account_level == 100
 
@@ -99,8 +99,8 @@ class TestV4MatchData:
 class TestMMRData:
     def test_parses_valid_data(self):
         data = {
-            "name": "SayGG",
-            "tag": "11111",
+            "name": "TenZ",
+            "tag": "00005",
             "current_data": {
                 "currenttierpatched": "Gold 2",
                 "ranking_in_tier": 45,
