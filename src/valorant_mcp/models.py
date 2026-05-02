@@ -30,6 +30,7 @@ class PlayerEconomy(BaseModel):
     loadout_value: EconomyLoadout
 
 class MatchPlayer(BaseModel):
+    puuid: str
     name: str
     tag: str
     character: str

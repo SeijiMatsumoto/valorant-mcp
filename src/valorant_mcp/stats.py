@@ -3,10 +3,10 @@ from valorant_mcp.models import MatchData, V4MatchData
 from valorant_mcp.callouts import ensure_loaded, resolve
 
 
-def format_match_history(matches: list[MatchData], name: str, tag: str) -> str:
+def format_match_history(matches: list[MatchData], name: str, tag: str, puuid: str) -> str:
     summaries = []
     for match in matches:
-        player = _find_player(match, name, tag)
+        player = _find_player(match, puuid)
         if not player:
             continue
         team = player.team.lower()
@@ -16,7 +16,7 @@ def format_match_history(matches: list[MatchData], name: str, tag: str) -> str:
 
         teammates = []
         for p in match.players.get(team, []):
-            if not (p.name.lower() == name.lower() and p.tag.lower() == tag.lower()):
+            if p.puuid != puuid:
                 ps = p.stats
                 teammates.append(f"{p.character} ({p.name}#{p.tag}): {ps.kills}/{ps.deaths}/{ps.assists}")
 
@@ -290,17 +290,17 @@ async def format_match_narrative(match: V4MatchData) -> str:
     return json.dumps(result, indent=2)
 
 
-def _find_player(match: MatchData, name: str, tag: str):
+def _find_player(match: MatchData, puuid: str):
     for player in match.players["all_players"]:
-        if player.name.lower() == name.lower() and player.tag.lower() == tag.lower():
+        if player.puuid == puuid:
             return player
     return None
 
 
-def compute_agent_stats(matches: list[MatchData], name: str, tag: str) -> str:
+def compute_agent_stats(matches: list[MatchData], name: str, tag: str, puuid: str) -> str:
     agent_stats = {}
     for match in matches:
-        player = _find_player(match, name, tag)                                                         
+        player = _find_player(match, puuid)                                                         
         if not player:
             continue
         agent = player.character
@@ -333,10 +333,10 @@ def compute_agent_stats(matches: list[MatchData], name: str, tag: str) -> str:
     return json.dumps(result, indent=2)
 
 
-def compute_map_stats(matches: list[MatchData], name: str, tag: str) -> str:
+def compute_map_stats(matches: list[MatchData], name: str, tag: str, puuid: str) -> str:
     map_stats = {}
     for match in matches:
-        player = _find_player(match, name, tag)
+        player = _find_player(match, puuid)
         if not player:
             continue
         map_name = match.metadata.map

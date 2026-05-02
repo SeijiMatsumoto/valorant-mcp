@@ -32,8 +32,9 @@ async def get_player_info(username: str) -> PlayerInfo:
 async def get_match_history(username: str, count: int = 5, mode: str = "competitive", region: str = "na") -> str:
     name, tag = henrik_client._parse_username(username)
     count = min(count, 10)
+    player_info = await henrik_client.get_player_info(username)
     matches = await henrik_client.get_match_history(username, region, count, mode)
-    return format_match_history(matches, name, tag)
+    return format_match_history(matches, name, tag, player_info.puuid)
 
 @mcp.tool(
     name="get_rank_progression",
@@ -50,8 +51,9 @@ async def get_rank_progression(username: str, region: str = "na") -> str:
 async def get_agent_stats(username: str, count: int = 20, mode: str = "competitive", region: str = "na") -> str:
     name, tag = henrik_client._parse_username(username)
     count = min(count, 10)
+    player_info = await henrik_client.get_player_info(username)
     matches = await henrik_client.get_match_history(username, region, count, mode)
-    return compute_agent_stats(matches, name, tag)
+    return compute_agent_stats(matches, name, tag, player_info.puuid)
 
 @mcp.tool(
     name="get_map_stats",
@@ -60,8 +62,9 @@ async def get_agent_stats(username: str, count: int = 20, mode: str = "competiti
 async def get_map_stats(username: str, count: int = 20, mode: str = "competitive", region: str = "na") -> str:
     name, tag = henrik_client._parse_username(username)
     count = min(count, 10)
+    player_info = await henrik_client.get_player_info(username)
     matches = await henrik_client.get_match_history(username, region, count, mode)
-    return compute_map_stats(matches, name, tag)
+    return compute_map_stats(matches, name, tag, player_info.puuid)
 
 @mcp.tool(
     name="get_weapon_stats",
