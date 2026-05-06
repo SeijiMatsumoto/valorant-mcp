@@ -83,6 +83,7 @@ class V4PlayerStats(BaseModel):
     damage: V4Damage
 
 class V4MatchPlayer(BaseModel):
+    puuid: str
     name: str
     tag: str
     team_id: str

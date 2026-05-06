@@ -189,11 +189,10 @@ async def format_match_narrative(match: V4MatchData) -> str:
     map_name = match.metadata.map.name
     sides = _derive_sides(match)
 
-    player_agents = {p.name + "#" + p.tag: p.agent.name for p in match.players}
+    player_agents = {p.puuid: p.agent.name for p in match.players}
 
     def tag(ref):
-        key = f"{ref.name}#{ref.tag}"
-        agent = player_agents.get(key, "?")
+        agent = player_agents.get(ref.puuid, "?")
         return f"{ref.name}#{ref.tag} ({agent}, {ref.team})"
 
     kills_by_round: dict[int, list] = {}
