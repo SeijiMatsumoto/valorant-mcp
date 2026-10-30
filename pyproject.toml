@@ -1,7 +1,7 @@
 [project]
 name = "valorant-mcp"
-version = "0.3.4"
-description = "Add your description here"
+version = "0.4.0"
+description = "MCP server for Valorant match analysis via Henrik's API"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -24,3 +24,7 @@ dev = [
 
 [project.scripts]
 valorant-mcp = "valorant_mcp.server:main"
+
+[tool.pytest.ini_options]
+markers = ["live: hits the real Henrik API (run with `uv run pytest -m live`)"]
+addopts = "-m 'not live'"

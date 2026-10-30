@@ -1,182 +1,19 @@
+"""Single-match views for get_match_details."""
+
 import json
-from valorant_mcp.models import MatchData, V4MatchData
+
+from valorant_mcp.analysis import (
+    TRADE_WINDOW_MS,
+    analyze_match,
+    attacking_team_by_round,
+    buy_type,
+    half_length,
+    side_for,
+    summarize_matches,
+    team_loadout,
+)
 from valorant_mcp.callouts import ensure_loaded, resolve
-
-
-def format_match_history(matches: list[MatchData], name: str, tag: str, puuid: str) -> str:
-    summaries = []
-    for match in matches:
-        player = _find_player(match, puuid)
-        if not player:
-            continue
-        team = player.team.lower()
-        opponent_team = "blue" if team == "red" else "red"
-        won = match.teams[team].has_won
-        s = player.stats
-
-        teammates = []
-        for p in match.players.get(team, []):
-            if p.puuid != puuid:
-                ps = p.stats
-                teammates.append(f"{p.character} ({p.name}#{p.tag}): {ps.kills}/{ps.deaths}/{ps.assists}")
-
-        opponents = []
-        for p in match.players.get(opponent_team, []):
-            opponents.append(f"{p.character} ({p.name}#{p.tag}): {p.stats.kills}/{p.stats.deaths}/{p.stats.assists}")
-
-        summaries.append({
-            "match_id": match.metadata.matchid,
-            "map": match.metadata.map,
-            "date": match.metadata.game_start_patched,
-            "result": "Win" if won else "Loss",
-            "rounds": f"{match.teams[team].rounds_won}-{match.teams[team].rounds_lost}",
-            "player": {
-                "agent": player.character,
-                "rank": player.currenttier_patched,
-                "kda": f"{s.kills}/{s.deaths}/{s.assists}",
-                "score": s.score,
-                "headshot_pct": f"{(s.headshots / (s.headshots + s.bodyshots + s.legshots)) * 100:.0f}%" if (s.headshots + s.bodyshots + s.legshots) > 0 else "0%",
-                "damage_made": player.damage_made,
-                "damage_received": player.damage_received,
-            },
-            "teammates": teammates,
-            "opponents": opponents,
-        })
-    return json.dumps(summaries, indent=2)
-
-
-def format_match_details(match: V4MatchData) -> str:
-    red_team = [p for p in match.players if p.team_id == "Red"]
-    blue_team = [p for p in match.players if p.team_id == "Blue"]
-
-    red_result = next(t for t in match.teams if t.team_id == "Red")
-    blue_result = next(t for t in match.teams if t.team_id == "Blue")
-
-    def format_player(p):
-        s = p.stats
-        total_shots = s.headshots + s.bodyshots + s.legshots
-        hs_pct = f"{(s.headshots / total_shots) * 100:.0f}%" if total_shots > 0 else "0%"
-        return {
-            "agent": p.agent.name,
-            "name": f"{p.name}#{p.tag}",
-            "rank": p.tier.name,
-            "kda": f"{s.kills}/{s.deaths}/{s.assists}",
-            "score": s.score,
-            "headshot_pct": hs_pct,
-            "damage_dealt": s.damage.dealt,
-            "damage_received": s.damage.received,
-            "economy": {
-                "spent": p.economy.spent.overall,
-                "avg_spent": p.economy.spent.average,
-                "loadout": p.economy.loadout_value.overall,
-                "avg_loadout": p.economy.loadout_value.average,
-            },
-        }
-
-    kills = []
-    for k in match.kills:
-        kills.append({
-            "round": k.round,
-            "time_in_round_ms": k.time_in_round_in_ms,
-            "killer": f"{k.killer.name}#{k.killer.tag} ({k.killer.team})",
-            "victim": f"{k.victim.name}#{k.victim.tag} ({k.victim.team})",
-            "weapon": k.weapon.name or "Ability",
-            "location": {"x": k.location.x, "y": k.location.y},
-            "assistants": [f"{a.name}#{a.tag}" for a in k.assistants],
-        })
-
-    rounds = []
-    for r in match.rounds:
-        round_data = {
-            "round": r.id,
-            "result": r.result,
-            "winning_team": r.winning_team,
-        }
-        if r.plant:
-            round_data["plant"] = {
-                "site": r.plant.site,
-                "time_ms": r.plant.round_time_in_ms,
-                "player": f"{r.plant.player.name}#{r.plant.player.tag}",
-                "location": {"x": r.plant.location.x, "y": r.plant.location.y},
-            }
-        if r.defuse:
-            round_data["defuse"] = {
-                "time_ms": r.defuse.round_time_in_ms,
-                "player": f"{r.defuse.player.name}#{r.defuse.player.tag}",
-                "location": {"x": r.defuse.location.x, "y": r.defuse.location.y},
-            }
-        round_data["player_economy"] = [
-            {
-                "player": f"{rs.player.name}#{rs.player.tag}",
-                "team": rs.player.team,
-                "loadout_value": rs.economy.loadout_value,
-                "remaining": rs.economy.remaining,
-                "weapon": rs.economy.weapon.name if rs.economy.weapon else None,
-                "armor": rs.economy.armor.name if rs.economy.armor else None,
-            }
-            for rs in r.stats
-        ]
-        rounds.append(round_data)
-
-    # Compute first bloods
-    first_bloods = {}
-    first_deaths = {}
-    for k in match.kills:
-        r = k.round
-        if r not in first_bloods:
-            first_bloods[r] = f"{k.killer.name}#{k.killer.tag}"
-            first_deaths[r] = f"{k.victim.name}#{k.victim.tag}"
-
-    fb_counts = {}
-    fd_counts = {}
-    for name in first_bloods.values():
-        fb_counts[name] = fb_counts.get(name, 0) + 1
-    for name in first_deaths.values():
-        fd_counts[name] = fd_counts.get(name, 0) + 1
-
-    result = {
-        "match_id": match.metadata.match_id,
-        "map": match.metadata.map.name,
-        "date": match.metadata.started_at,
-        "region": match.metadata.region,
-        "red_team": {
-            "result": "Win" if red_result.won else "Loss",
-            "rounds": f"{red_result.rounds.won}-{red_result.rounds.lost}",
-            "players": [format_player(p) for p in red_team],
-        },
-        "blue_team": {
-            "result": "Win" if blue_result.won else "Loss",
-            "rounds": f"{blue_result.rounds.won}-{blue_result.rounds.lost}",
-            "players": [format_player(p) for p in blue_team],
-        },
-        "first_blood_counts": fb_counts,
-        "first_death_counts": fd_counts,
-        "kills": kills,
-        "rounds": rounds,
-    }
-    return json.dumps(result, indent=2)
-
-
-def _derive_sides(match: V4MatchData) -> dict[int, dict[str, str]]:
-    attacker_r1 = None
-    for r in sorted(match.rounds, key=lambda r: r.id):
-        if r.id > 12:
-            break
-        if r.plant:
-            attacker_r1 = r.plant.player.team
-            break
-    if attacker_r1 is None:
-        return {}
-    defender_r1 = "Blue" if attacker_r1 == "Red" else "Red"
-    sides: dict[int, dict[str, str]] = {}
-    for r in match.rounds:
-        if r.id <= 12:
-            sides[r.id] = {attacker_r1.lower(): "attack", defender_r1.lower(): "defense"}
-        elif r.id <= 24:
-            sides[r.id] = {attacker_r1.lower(): "defense", defender_r1.lower(): "attack"}
-        else:
-            sides[r.id] = {"red": "overtime", "blue": "overtime"}
-    return sides
+from valorant_mcp.models import Match
 
 
 def _ms_to_clock(ms: int) -> str:
@@ -184,40 +21,129 @@ def _ms_to_clock(ms: int) -> str:
     return f"{total_s // 60}:{total_s % 60:02d}"
 
 
-async def format_match_narrative(match: V4MatchData) -> str:
-    await ensure_loaded()
-    map_name = match.metadata.map.name
-    sides = _derive_sides(match)
+def _team_ids(match: Match) -> list[str]:
+    return sorted({p.team_id for p in match.players})
 
+
+def _round_buys(match: Match, rnd) -> dict[str, str]:
+    if rnd.id in (0, half_length(match)):
+        return {t: "pistol" for t in _team_ids(match)}
+    buys = {}
+    for t in _team_ids(match):
+        value = team_loadout(rnd, t)
+        buys[t] = buy_type(value) if value is not None else "unknown"
+    return buys
+
+
+def _sides(match: Match, round_id: int, attackers: dict[int, str]) -> dict[str, str | None]:
+    return {t: side_for(t, round_id, attackers) for t in _team_ids(match)}
+
+
+async def format_match_details(match: Match) -> str:
+    await ensure_loaded()
+    attackers = attacking_team_by_round(match)
+    teams_out = {}
+    for team in match.teams:
+        players = []
+        for p in sorted((p for p in match.players if p.team_id == team.team_id),
+                        key=lambda p: p.stats.score, reverse=True):
+            rec = analyze_match(match, p.puuid)
+            summary = summarize_matches([rec]) if rec else {}
+            s = p.stats
+            shots = s.headshots + s.bodyshots + s.legshots
+            row = {
+                "name": f"{p.name}#{p.tag}",
+                "agent": p.agent.name,
+                "rank": p.tier.name,
+                "kda": f"{s.kills}/{s.deaths}/{s.assists}",
+                "acs": round(rec.acs) if rec else None,
+                "adr": round(s.damage.dealt / rec.rounds_played) if rec else None,
+                "hs_pct": round(100 * s.headshots / shots) if shots else 0,
+                "kast_pct": summary.get("kast_pct"),
+                "fk_fd": f"{summary.get('first_kills')}/{summary.get('first_deaths')}",
+                "deaths_traded_pct": summary.get("trading", {}).get("my_deaths_traded_pct"),
+                "multikills": summary.get("multikills"),
+                "clutches": summary.get("clutches"),
+                "avg_loadout": round(p.economy.loadout_value.average),
+                "party": p.party_id[:8] if p.party_id else None,
+            }
+            if p.performance and p.performance.ratings and p.performance.ratings.grade:
+                row["henrik_grade"] = p.performance.ratings.grade
+            players.append(row)
+        teams_out[team.team_id] = {
+            "result": "Win" if team.won else "Loss",
+            "rounds": f"{team.rounds.won}-{team.rounds.lost}",
+            "started_on": side_for(team.team_id, 0, attackers),
+            "players": players,
+        }
+
+    rounds = []
+    first_bloods: dict[str, int] = {}
+    for rnd in sorted(match.rounds, key=lambda r: r.id):
+        kills = sorted((k for k in match.kills if k.round == rnd.id), key=lambda k: k.time_in_round_in_ms)
+        row = {
+            "round": rnd.id + 1,
+            "winner": rnd.winning_team,
+            "how": rnd.result,
+            "sides": _sides(match, rnd.id, attackers),
+            "buys": _round_buys(match, rnd),
+        }
+        if kills:
+            fb = kills[0]
+            row["first_blood"] = f"{fb.killer.name} > {fb.victim.name} ({_ms_to_clock(fb.time_in_round_in_ms)})"
+            first_bloods[fb.killer.team] = first_bloods.get(fb.killer.team, 0) + 1
+        if rnd.plant:
+            row["plant"] = f"{rnd.plant.site} by {rnd.plant.player.name} at {_ms_to_clock(rnd.plant.round_time_in_ms)}"
+        if rnd.defuse:
+            row["defuse"] = f"{rnd.defuse.player.name} at {_ms_to_clock(rnd.defuse.round_time_in_ms)}"
+        row["kills"] = [
+            f"{_ms_to_clock(k.time_in_round_in_ms)} {k.killer.name} > {k.victim.name} ({k.weapon.name or 'Ability'})"
+            for k in kills
+        ]
+        rounds.append(row)
+
+    result = {
+        "match_id": match.metadata.match_id,
+        "map": match.metadata.map.name,
+        "mode": match.metadata.queue.name if match.metadata.queue else None,
+        "date": match.metadata.started_at,
+        "teams": teams_out,
+        "first_bloods_by_team": first_bloods,
+        "rounds": rounds,
+    }
+    if match.metadata.mvp:
+        result["match_mvp"] = f"{match.metadata.mvp.name}#{match.metadata.mvp.tag}"
+    return json.dumps(result, indent=1, ensure_ascii=False)
+
+
+async def format_match_narrative(match: Match, focus_puuid: str | None = None,
+                                 only_rounds: list[int] | None = None) -> str:
+    await ensure_loaded()
+    map_name = match.metadata.map.name or ""
+    attackers = attacking_team_by_round(match)
     player_agents = {p.puuid: p.agent.name for p in match.players}
 
     def tag(ref):
-        agent = player_agents.get(ref.puuid, "?")
-        return f"{ref.name}#{ref.tag} ({agent}, {ref.team})"
-
-    kills_by_round: dict[int, list] = {}
-    for k in match.kills:
-        kills_by_round.setdefault(k.round, []).append(k)
+        me = " (YOU)" if focus_puuid and ref.puuid == focus_puuid else ""
+        return f"{ref.name}#{ref.tag} ({player_agents.get(ref.puuid, '?')}, {ref.team}){me}"
 
     rounds_out = []
     for r in sorted(match.rounds, key=lambda r: r.id):
+        if only_rounds and r.id + 1 not in only_rounds:
+            continue
         timeline = []
-        rks = sorted(kills_by_round.get(r.id, []), key=lambda k: k.time_in_round_in_ms)
+        rks = sorted((k for k in match.kills if k.round == r.id), key=lambda k: k.time_in_round_in_ms)
 
         for idx, k in enumerate(rks):
             region, super_region = resolve(map_name, k.location.x, k.location.y)
-            tags = []
-            if idx == 0:
-                tags.extend(["entry", "first_blood"])
-            for prev in rks[:idx]:
-                if (k.time_in_round_in_ms - prev.time_in_round_in_ms) <= 5000 \
-                        and prev.victim.team == k.killer.team:
-                    prev_region, _ = resolve(map_name, prev.location.x, prev.location.y)
-                    if prev_region == region:
-                        tags.append("trade")
-                        break
+            tags = ["first_blood"] if idx == 0 else []
+            if any(prev.killer.puuid == k.victim.puuid and prev.victim.team == k.killer.team
+                   and k.time_in_round_in_ms - prev.time_in_round_in_ms <= TRADE_WINDOW_MS
+                   for prev in rks[:idx]):
+                tags.append("trade")
             timeline.append({
                 "t": _ms_to_clock(k.time_in_round_in_ms),
+                "ms": k.time_in_round_in_ms,
                 "type": "kill",
                 "actor": tag(k.killer),
                 "target": tag(k.victim),
@@ -227,26 +153,24 @@ async def format_match_narrative(match: V4MatchData) -> str:
                 "tags": tags,
             })
 
-        if r.plant:
-            region, super_region = resolve(map_name, r.plant.location.x, r.plant.location.y)
-            timeline.append({
-                "t": _ms_to_clock(r.plant.round_time_in_ms),
-                "type": "plant",
-                "actor": tag(r.plant.player),
-                "site": r.plant.site,
+        for event, data in (("plant", r.plant), ("defuse", r.defuse)):
+            if not data:
+                continue
+            region, super_region = resolve(map_name, data.location.x, data.location.y)
+            entry = {
+                "t": _ms_to_clock(data.round_time_in_ms),
+                "ms": data.round_time_in_ms,
+                "type": event,
+                "actor": tag(data.player),
                 "zone": region,
                 "zone_group": super_region,
-            })
-        if r.defuse:
-            region, super_region = resolve(map_name, r.defuse.location.x, r.defuse.location.y)
-            timeline.append({
-                "t": _ms_to_clock(r.defuse.round_time_in_ms),
-                "type": "defuse",
-                "actor": tag(r.defuse.player),
-                "zone": region,
-                "zone_group": super_region,
-            })
-        timeline.sort(key=lambda e: e["t"])
+            }
+            if event == "plant":
+                entry["site"] = data.site
+            timeline.append(entry)
+        timeline.sort(key=lambda e: e["ms"])
+        for e in timeline:
+            del e["ms"]
 
         round_tags = []
         first_kill = next((e for e in timeline if e["type"] == "kill"), None)
@@ -257,134 +181,25 @@ async def format_match_narrative(match: V4MatchData) -> str:
             round_tags.append(f"rotation_{first_kill['zone_group']}_to_{plant_event['zone_group']}")
 
         rounds_out.append({
-            "round": r.id,
-            "side": sides.get(r.id, {}),
+            "round": r.id + 1,
+            "sides": _sides(match, r.id, attackers),
+            "buys": _round_buys(match, r),
             "outcome": r.result,
             "winning_team": r.winning_team,
             "tags": round_tags,
             "timeline": timeline,
         })
 
-    red_team = next((t for t in match.teams if t.team_id == "Red"), None)
-    blue_team = next((t for t in match.teams if t.team_id == "Blue"), None)
-
+    teams = {t.team_id: t for t in match.teams}
     result = {
         "match_id": match.metadata.match_id,
         "map": map_name,
         "date": match.metadata.started_at,
-        "sides_first_half": {
-            "red": sides.get(1, {}).get("red"),
-            "blue": sides.get(1, {}).get("blue"),
-        },
-        "score": {
-            "red": f"{red_team.rounds.won}-{red_team.rounds.lost}" if red_team else None,
-            "blue": f"{blue_team.rounds.won}-{blue_team.rounds.lost}" if blue_team else None,
-        },
+        "score": {tid: f"{t.rounds.won}-{t.rounds.lost}" for tid, t in teams.items()},
         "players": {
-            "red": [f"{p.name}#{p.tag} ({p.agent.name})" for p in match.players if p.team_id == "Red"],
-            "blue": [f"{p.name}#{p.tag} ({p.agent.name})" for p in match.players if p.team_id == "Blue"],
+            tid: [f"{p.name}#{p.tag} ({p.agent.name})" for p in match.players if p.team_id == tid]
+            for tid in teams
         },
         "rounds": rounds_out,
     }
-    return json.dumps(result, indent=2)
-
-
-def _find_player(match: MatchData, puuid: str):
-    for player in match.players["all_players"]:
-        if player.puuid == puuid:
-            return player
-    return None
-
-
-def compute_agent_stats(matches: list[MatchData], name: str, tag: str, puuid: str) -> str:
-    agent_stats = {}
-    for match in matches:
-        player = _find_player(match, puuid)                                                         
-        if not player:
-            continue
-        agent = player.character
-        team = player.team.lower()
-        won = match.teams[team].has_won
-
-        if agent not in agent_stats:
-            agent_stats[agent] = {"games": 0, "wins": 0, "kills": 0, "deaths": 0, "assists": 0, "score": 0}
-
-        agent_stats[agent]["games"] += 1
-        agent_stats[agent]["wins"] += 1 if won else 0
-        agent_stats[agent]["kills"] += player.stats.kills
-        agent_stats[agent]["deaths"] += player.stats.deaths
-        agent_stats[agent]["assists"] += player.stats.assists
-        agent_stats[agent]["score"] += player.stats.score
-
-    result = {}
-    for agent, stats in agent_stats.items():
-        g = stats["games"]
-        result[agent] = {
-            "games": g,
-            "wins": stats["wins"],
-            "losses": g - stats["wins"],
-            "win_rate": f"{(stats['wins'] / g) * 100:.0f}%",
-            "avg_kills": round(stats["kills"] / g, 1),
-            "avg_deaths": round(stats["deaths"] / g, 1),
-            "avg_assists": round(stats["assists"] / g, 1),
-            "avg_score": round(stats["score"] / g, 0),
-        }
-    return json.dumps(result, indent=2)
-
-
-def compute_map_stats(matches: list[MatchData], name: str, tag: str, puuid: str) -> str:
-    map_stats = {}
-    for match in matches:
-        player = _find_player(match, puuid)
-        if not player:
-            continue
-        map_name = match.metadata.map
-        team = player.team.lower()
-        won = match.teams[team].has_won
-
-        if map_name not in map_stats:
-            map_stats[map_name] = {"games": 0, "wins": 0, "score": 0}
-
-        map_stats[map_name]["games"] += 1
-        map_stats[map_name]["wins"] += 1 if won else 0
-        map_stats[map_name]["score"] += player.stats.score
-
-    result = {}
-    for map_name, stats in map_stats.items():
-        g = stats["games"]
-        result[map_name] = {
-            "games": g,
-            "wins": stats["wins"],
-            "losses": g - stats["wins"],
-            "win_rate": f"{(stats['wins'] / g) * 100:.0f}%",
-            "avg_score": round(stats["score"] / g, 0),
-        }
-    return json.dumps(result, indent=2)
-
-
-def compute_weapon_stats(matches: list[V4MatchData], name: str, tag: str) -> str:
-    weapon_stats = {}
-    full_name = f"{name}#{tag}".lower()
-
-    for match in matches:
-        for kill in match.kills:
-            killer_name = f"{kill.killer.name}#{kill.killer.tag}".lower()
-            if killer_name != full_name:
-                continue
-
-            weapon_name = kill.weapon.name or "Ability"
-            if weapon_name not in weapon_stats:
-                weapon_stats[weapon_name] = {"kills": 0}
-
-            weapon_stats[weapon_name]["kills"] += 1
-
-    sorted_weapons = dict(sorted(weapon_stats.items(), key=lambda x: x[1]["kills"], reverse=True))
-
-    total_kills = sum(w["kills"] for w in sorted_weapons.values())
-    result = {"total_kills": total_kills, "matches_analyzed": len(matches), "weapons": {}}
-    for weapon, stats in sorted_weapons.items():
-        result["weapons"][weapon] = {
-            "kills": stats["kills"],
-            "usage_pct": f"{(stats['kills'] / total_kills) * 100:.0f}%" if total_kills > 0 else "0%",
-        }
-    return json.dumps(result, indent=2)
+    return json.dumps(result, indent=1, ensure_ascii=False)

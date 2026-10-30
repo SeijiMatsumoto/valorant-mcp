@@ -1,12 +1,65 @@
-from datetime import date
 from pydantic import BaseModel
 
-class PlayerInfo(BaseModel):
+# Models mirror Henrik's v4 schema (https://api.henrikdev.xyz/openapi.json).
+# Fields added in 4.10 are optional: prod often returns them as null.
+
+
+class IdName(BaseModel):
+    id: str | None = None
+    name: str | None = None
+
+
+class TierRef(BaseModel):
+    id: int
+    name: str
+
+
+class SeasonRef(BaseModel):
+    id: str
+    short: str | None = None
+
+
+# --- Account (v2) ---
+
+class Account(BaseModel):
     puuid: str
     region: str
     account_level: int
     name: str
     tag: str
+    platforms: list[str] = []
+
+
+# --- Match (v4) ---
+
+class Location(BaseModel):
+    x: int
+    y: int
+
+
+class PlayerRef(BaseModel):
+    puuid: str
+    name: str
+    tag: str
+    team: str
+
+
+class PlayerLocation(BaseModel):
+    player: PlayerRef
+    view_radians: float | None = None
+    location: Location
+
+
+class Weapon(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    type: str | None = None
+
+
+class Damage(BaseModel):
+    dealt: int
+    received: int
+
 
 class PlayerStats(BaseModel):
     score: int
@@ -16,183 +69,228 @@ class PlayerStats(BaseModel):
     headshots: int
     bodyshots: int
     legshots: int
+    damage: Damage
 
-class EconomySpent(BaseModel):
+
+class EconomyTotal(BaseModel):
     overall: int
     average: float
 
-class EconomyLoadout(BaseModel):
-    overall: int
-    average: float
 
 class PlayerEconomy(BaseModel):
-    spent: EconomySpent
-    loadout_value: EconomyLoadout
+    spent: EconomyTotal
+    loadout_value: EconomyTotal
+
+
+class AbilityCasts(BaseModel):
+    grenade: int | None = None
+    ability1: int | None = None
+    ability2: int | None = None
+    ultimate: int | None = None
+
+
+class CombatRatings(BaseModel):
+    damage: str | None = None
+    death_impact: str | None = None
+    kill_impact: str | None = None
+    trades: str | None = None
+
+
+class UtilityRatings(BaseModel):
+    assists: str | None = None
+    defuses: str | None = None
+    plants: str | None = None
+    utility_usage: str | None = None
+
+
+class PerformanceRatings(BaseModel):
+    grade: str | None = None
+    combat: CombatRatings | None = None
+    utility: UtilityRatings | None = None
+
+
+class Performance(BaseModel):
+    score: float | None = None
+    breakdown: dict[str, float | None] = {}
+    ratings: PerformanceRatings | None = None
+
 
 class MatchPlayer(BaseModel):
     puuid: str
     name: str
     tag: str
-    character: str
-    team: str
-    currenttier_patched: str
-    stats: PlayerStats
-    economy: PlayerEconomy
-    damage_made: int
-    damage_received: int
-
-class TeamResult(BaseModel):
-    has_won: bool
-    rounds_won: int
-    rounds_lost: int
-
-class MatchMetadata(BaseModel):
-    map: str
-    game_start_patched: str
-    matchid: str
-
-class MatchData(BaseModel):
-    metadata: MatchMetadata
-    players: dict[str, list[MatchPlayer]]
-    teams: dict[str, TeamResult]
-
-class V4Map(BaseModel):
-    id: str
-    name: str
-
-class V4Agent(BaseModel):
-    id: str
-    name: str
-
-class V4Tier(BaseModel):
-    id: int
-    name: str
-
-class V4Damage(BaseModel):
-    dealt: int
-    received: int
-
-class V4PlayerStats(BaseModel):
-    score: int
-    kills: int
-    deaths: int
-    assists: int
-    headshots: int
-    bodyshots: int
-    legshots: int
-    damage: V4Damage
-
-class V4MatchPlayer(BaseModel):
-    puuid: str
-    name: str
-    tag: str
     team_id: str
-    agent: V4Agent
-    stats: V4PlayerStats
-    tier: V4Tier
+    party_id: str | None = None
+    agent: IdName
+    stats: PlayerStats
+    tier: TierRef
     economy: PlayerEconomy
+    ability_casts: AbilityCasts | None = None
+    session_playtime_in_ms: int | None = None
+    performance: Performance | None = None
 
-class V4Rounds(BaseModel):
+
+class TeamRounds(BaseModel):
     won: int
     lost: int
 
-class V4Team(BaseModel):
+
+class Team(BaseModel):
     team_id: str
-    rounds: V4Rounds
+    rounds: TeamRounds
     won: bool
+    mvp: PlayerRef | None = None
 
-class V4MatchMetadata(BaseModel):
-    match_id: str
-    map: V4Map
-    started_at: str
-    region: str
 
-class V4Location(BaseModel):
-    x: int
-    y: int
-
-class V4PlayerRef(BaseModel):
-    puuid: str
-    name: str
-    tag: str
-    team: str
-
-class V4Weapon(BaseModel):
+class Queue(BaseModel):
     id: str | None = None
     name: str | None = None
-    type: str | None = None
+    mode_type: str | None = None
 
-class V4Kill(BaseModel):
+
+class MatchMetadata(BaseModel):
+    match_id: str
+    map: IdName
+    started_at: str
+    game_length_in_ms: int | None = None
+    is_completed: bool = True
+    queue: Queue | None = None
+    season: SeasonRef | None = None
+    region: str | None = None
+    mvp: PlayerRef | None = None
+
+
+class Kill(BaseModel):
     time_in_round_in_ms: int
     time_in_match_in_ms: int
     round: int
-    killer: V4PlayerRef
-    victim: V4PlayerRef
-    assistants: list[V4PlayerRef]
-    location: V4Location
-    weapon: V4Weapon
-    secondary_fire_mode: bool
+    killer: PlayerRef
+    victim: PlayerRef
+    assistants: list[PlayerRef] = []
+    location: Location
+    weapon: Weapon
+    secondary_fire_mode: bool = False
+    player_locations: list[PlayerLocation] = []
 
-class V4PlantDefuse(BaseModel):
+
+class PlantDefuse(BaseModel):
     round_time_in_ms: int
     site: str | None = None
-    location: V4Location
-    player: V4PlayerRef
+    location: Location
+    player: PlayerRef
 
-class V4RoundPlayerStats(BaseModel):
+
+class DamageEvent(BaseModel):
+    player: PlayerRef
+    damage: int
+    headshots: int
+    bodyshots: int
+    legshots: int
+
+
+class RoundPlayerStatsStats(BaseModel):
     score: int
     kills: int
     headshots: int
     bodyshots: int
     legshots: int
 
-class V4Armor(BaseModel):
-    id: str
-    name: str
 
-class V4RoundEconomy(BaseModel):
+class RoundEconomy(BaseModel):
     loadout_value: int
     remaining: int
-    weapon: V4Weapon | None = None
-    armor: V4Armor | None = None
+    weapon: Weapon | None = None
+    armor: IdName | None = None
 
-class V4RoundStat(BaseModel):
-    player: V4PlayerRef
-    stats: V4RoundPlayerStats
-    economy: V4RoundEconomy
-    was_afk: bool
-    stayed_in_spawn: bool
 
-class V4Round(BaseModel):
+class RoundPlayerStats(BaseModel):
+    player: PlayerRef
+    stats: RoundPlayerStatsStats
+    economy: RoundEconomy
+    damage_events: list[DamageEvent] = []
+    was_afk: bool = False
+    stayed_in_spawn: bool = False
+
+
+class Round(BaseModel):
+    # Round ids are 0-indexed in v4.
     id: int
     result: str
-    ceremony: str
+    ceremony: str | None = None
     winning_team: str
-    plant: V4PlantDefuse | None = None
-    defuse: V4PlantDefuse | None = None
-    stats: list[V4RoundStat]
+    winning_team_role: str | None = None
+    first_blood: PlayerRef | None = None
+    plant: PlantDefuse | None = None
+    defuse: PlantDefuse | None = None
+    stats: list[RoundPlayerStats] = []
 
-class V4MatchData(BaseModel):
-    metadata: V4MatchMetadata
-    players: list[V4MatchPlayer]
-    teams: list[V4Team]
-    kills: list[V4Kill]
-    rounds: list[V4Round]
 
-class CurrentMMR(BaseModel):                                                                        
-    currenttierpatched: str
-    ranking_in_tier: int                                                                            
-    mmr_change_to_last_game: int                                
-    elo: int                                                                                        
-                                                                
-class SeasonData(BaseModel):                                    
+class Match(BaseModel):
+    metadata: MatchMetadata
+    players: list[MatchPlayer]
+    teams: list[Team]
+    rounds: list[Round]
+    kills: list[Kill]
+
+
+# --- MMR (v3) ---
+
+class MMRAccount(BaseModel):
+    puuid: str
+    name: str
+    tag: str
+
+
+class MMRCurrent(BaseModel):
+    tier: TierRef
+    rr: int
+    last_change: int
+    elo: int
+    games_needed_for_rating: int = 0
+    rank_protection_shields: int | None = None
+    rank_protection_status: str | None = None
+
+
+class MMRPeak(BaseModel):
+    season: SeasonRef
+    tier: TierRef
+    rr: int
+
+
+class MMRSeason(BaseModel):
+    season: SeasonRef
     wins: int
-    number_of_games: int
-    final_rank_patched: str                                                                         
+    games: int
+    end_tier: TierRef
+    end_rr: int
 
-class MMRData(BaseModel):                                                                         
-    name: str                                                                                       
-    tag: str                                                                                      
-    current_data: CurrentMMR
-    highest_rank: dict
-    by_season: dict[str, SeasonData | dict]
+
+class MMR(BaseModel):
+    account: MMRAccount
+    current: MMRCurrent
+    peak: MMRPeak | None = None
+    seasonal: list[MMRSeason] = []
+
+
+# --- MMR history (v2) ---
+
+class MMRHistoryEntry(BaseModel):
+    match_id: str
+    date: str
+    map: IdName
+    season: SeasonRef
+    tier: TierRef
+    rr: int
+    last_change: int
+    elo: int
+    rr_before_update: int | None = None
+    rr_performance_bonus: int | None = None
+    rr_penalty: float | None = None
+    afk_penalty: int | None = None
+    was_derank_protected: bool = False
+    is_placement_match: bool | None = None
+
+
+class MMRHistory(BaseModel):
+    account: MMRAccount
+    history: list[MMRHistoryEntry]

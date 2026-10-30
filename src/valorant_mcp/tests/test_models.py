@@ -1,125 +1,58 @@
 import json
+from pathlib import Path
+
 import pytest
-from valorant_mcp.models import (
-    PlayerInfo, MatchData, V4MatchData, MMRData,
-)
+
+from valorant_mcp.models import MMR, Match, MMRHistoryEntry
+
+SAMPLE = Path(__file__).parents[3] / "sample_match_details.json"
 
 
-class TestPlayerInfo:
-    def test_parses_valid_data(self):
-        data = {
-            "puuid": "abc-123",
-            "region": "na",
-            "account_level": 100,
-            "name": "TenZ",
-            "tag": "00005",
-        }
-        player = PlayerInfo(**data)
-        assert player.name == "TenZ"
-        assert player.puuid == "abc-123"
-        assert player.account_level == 100
-
-    def test_rejects_missing_fields(self):
-        with pytest.raises(Exception):
-            PlayerInfo(puuid="abc", region="na")
+@pytest.mark.skipif(not SAMPLE.exists(), reason="sample payload not present")
+def test_parses_real_v4_payload():
+    raw = json.loads(SAMPLE.read_text())
+    match = Match(**raw.get("data", raw))
+    assert len(match.players) == 10
+    assert match.rounds[0].id == 0
+    assert all(k.round >= 0 for k in match.kills)
 
 
-class TestMatchData:
-    @pytest.fixture
-    def sample_match(self):
-        with open("sample_matches.json") as f:
-            data = json.load(f)
-        return data["data"][0]
-
-    def test_parses_sample_match(self, sample_match):
-        match = MatchData(**sample_match)
-        assert match.metadata.map == "Bind"
-        assert match.metadata.matchid is not None
-        assert "all_players" in match.players
-        assert len(match.players["all_players"]) > 0
-
-    def test_player_has_stats(self, sample_match):
-        match = MatchData(**sample_match)
-        player = match.players["all_players"][0]
-        assert player.stats.kills >= 0
-        assert player.stats.headshots >= 0
-        assert player.stats.bodyshots >= 0
-
-    def test_player_has_economy(self, sample_match):
-        match = MatchData(**sample_match)
-        player = match.players["all_players"][0]
-        assert player.economy.spent.overall > 0
-        assert player.economy.loadout_value.overall > 0
-
-    def test_player_has_damage(self, sample_match):
-        match = MatchData(**sample_match)
-        player = match.players["all_players"][0]
-        assert player.damage_made >= 0
-        assert player.damage_received >= 0
-
-    def test_teams_parsed(self, sample_match):
-        match = MatchData(**sample_match)
-        assert "red" in match.teams
-        assert "blue" in match.teams
-        assert isinstance(match.teams["red"].has_won, bool)
+def test_410_fields_are_optional():
+    match = Match.model_validate({
+        "metadata": {"match_id": "m", "map": {"id": "x", "name": "Bind"}, "started_at": "2026-01-01T00:00:00Z"},
+        "players": [], "teams": [], "kills": [],
+        "rounds": [{"id": 0, "result": "Elimination", "winning_team": "Red", "stats": [],
+                    "winning_team_role": None, "first_blood": None}],
+    })
+    assert match.rounds[0].first_blood is None
+    assert match.metadata.mvp is None
 
 
-class TestV4MatchData:
-    @pytest.fixture
-    def sample_v4_match(self):
-        with open("sample_match_details.json") as f:
-            data = json.load(f)
-        return data["data"]
-
-    def test_parses_sample_v4_match(self, sample_v4_match):
-        match = V4MatchData(**sample_v4_match)
-        assert match.metadata.map.name is not None
-        assert len(match.players) > 0
-        assert len(match.teams) == 2
-
-    def test_v4_player_has_damage(self, sample_v4_match):
-        match = V4MatchData(**sample_v4_match)
-        player = match.players[0]
-        assert player.stats.damage.dealt > 0
-        assert player.stats.damage.received > 0
-
-    def test_v4_player_has_economy(self, sample_v4_match):
-        match = V4MatchData(**sample_v4_match)
-        player = match.players[0]
-        assert player.economy.spent.overall > 0
-
-    def test_v4_player_has_headshots(self, sample_v4_match):
-        match = V4MatchData(**sample_v4_match)
-        player = match.players[0]
-        assert player.stats.headshots >= 0
-        assert player.stats.bodyshots >= 0
-        assert player.stats.legshots >= 0
+def test_performance_ratings_parse():
+    from valorant_mcp.models import Performance
+    perf = Performance.model_validate({
+        "score": 191.4,
+        "breakdown": {"damage": 99.3, "defuses": None},
+        "ratings": {"grade": "pass", "combat": {"damage": "down"}, "utility": None},
+    })
+    assert perf.ratings.grade == "pass"
+    assert perf.breakdown["defuses"] is None
 
 
-class TestMMRData:
-    def test_parses_valid_data(self):
-        data = {
-            "name": "TenZ",
-            "tag": "00005",
-            "current_data": {
-                "currenttierpatched": "Gold 2",
-                "ranking_in_tier": 45,
-                "mmr_change_to_last_game": 18,
-                "elo": 945,
-            },
-            "highest_rank": {
-                "patched_tier": "Platinum 1",
-                "season": "e5a3",
-            },
-            "by_season": {
-                "e9a1": {
-                    "wins": 30,
-                    "number_of_games": 50,
-                    "final_rank_patched": "Gold 2",
-                },
-            },
-        }
-        mmr = MMRData(**data)
-        assert mmr.current_data.currenttierpatched == "Gold 2"
-        assert mmr.current_data.elo == 945
-        assert mmr.by_season["e9a1"].wins == 30
+def test_mmr_v3():
+    mmr = MMR.model_validate({
+        "account": {"puuid": "p", "name": "n", "tag": "t"},
+        "current": {"tier": {"id": 12, "name": "Gold 1"}, "rr": 20, "last_change": -13, "elo": 920},
+        "peak": {"season": {"id": "s", "short": "e1a1"}, "tier": {"id": 18, "name": "Diamond 1"}, "rr": 0},
+        "seasonal": [],
+    })
+    assert mmr.peak.tier.name == "Diamond 1"
+
+
+def test_mmr_history_entry_nullable_bonus():
+    entry = MMRHistoryEntry.model_validate({
+        "match_id": "m", "date": "2026-01-01T00:00:00Z", "map": {"id": "x", "name": "Bind"},
+        "season": {"id": "s", "short": "e11a5"}, "tier": {"id": 12, "name": "Gold 1"},
+        "rr": 20, "last_change": -13, "elo": 920, "rr_performance_bonus": None,
+    })
+    assert entry.rr_performance_bonus is None

@@ -1,8 +1,15 @@
+import httpx
 import pytest
 import respx
-import httpx
-from valorant_mcp.henrik import HenrikClient
-from valorant_mcp.models import PlayerInfo
+
+from valorant_mcp import henrik
+from valorant_mcp.cache import MatchCache
+from valorant_mcp.henrik import HenrikAPIError, HenrikClient, parse_username
+
+from .conftest import make_match, make_round
+
+BASE = "https://api.henrikdev.xyz/valorant"
+LIST_URL = f"{BASE}/v4/matches/na/pc/TenZ/00005"
 
 
 @pytest.fixture
@@ -10,132 +17,101 @@ def client():
     return HenrikClient(api_key="test-key")
 
 
+def raw_match(match_id: str) -> dict:
+    return make_match([make_round(0, "Red")], match_id=match_id).model_dump()
+
+
 class TestParseUsername:
-    def test_splits_name_and_tag(self, client):
-        name, tag = client._parse_username("TenZ#00005")
-        assert name == "TenZ"
-        assert tag == "00005"
+    def test_splits_name_and_tag(self):
+        assert parse_username("TenZ#00005") == ("TenZ", "00005")
 
-    def test_raises_on_invalid_format(self, client):
+    def test_keeps_spaces_in_name(self):
+        assert parse_username("Some Name#NA1") == ("Some Name", "NA1")
+
+    @pytest.mark.parametrize("bad", ["NoHashHere", "#tag", "name#"])
+    def test_rejects_invalid(self, bad):
         with pytest.raises(ValueError):
-            client._parse_username("NoHashHere")
+            parse_username(bad)
 
 
-class TestGetPlayerInfo:
+class TestGetMatches:
     @respx.mock
     @pytest.mark.asyncio
-    async def test_returns_player_info(self, client):
-        respx.get("https://api.henrikdev.xyz/valorant/v1/account/TenZ/00005").mock(
-            return_value=httpx.Response(200, json={
-                "data": {
-                    "puuid": "abc-123",
-                    "region": "na",
-                    "account_level": 100,
-                    "name": "TenZ",
-                    "tag": "00005",
-                }
-            })
-        )
-        result = await client.get_player_info("TenZ#00005")
-        assert isinstance(result, PlayerInfo)
-        assert result.name == "TenZ"
-        assert result.account_level == 100
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_sends_auth_header(self, client):
-        route = respx.get("https://api.henrikdev.xyz/valorant/v1/account/TenZ/00005").mock(
-            return_value=httpx.Response(200, json={
-                "data": {
-                    "puuid": "abc-123",
-                    "region": "na",
-                    "account_level": 100,
-                    "name": "TenZ",
-                    "tag": "00005",
-                }
-            })
-        )
-        await client.get_player_info("TenZ#00005")
+    async def test_paginates_until_count(self, client):
+        route = respx.get(LIST_URL).mock(side_effect=[
+            httpx.Response(200, json={"data": [raw_match(f"a{i}") for i in range(10)]}),
+            httpx.Response(200, json={"data": [raw_match(f"b{i}") for i in range(10)]}),
+        ])
+        matches = await client.get_matches("TenZ#00005", 15)
+        assert len(matches) == 15
+        assert [c.request.url.params["start"] for c in route.calls] == ["0", "10"]
         assert route.calls[0].request.headers["Authorization"] == "test-key"
 
-
-class TestGetMatchHistory:
     @respx.mock
     @pytest.mark.asyncio
-    async def test_returns_match_list(self, client):
-        respx.get(
-            "https://api.henrikdev.xyz/valorant/v3/matches/na/TenZ/00005",
-            params={"mode": "competitive", "size": "5"},
-        ).mock(
-            return_value=httpx.Response(200, json={
-                "data": [
-                    {
-                        "metadata": {
-                            "map": "Bind",
-                            "game_start_patched": "Wednesday, March 25, 2026",
-                            "matchid": "match-001",
-                        },
-                        "players": {
-                            "all_players": [
-                                {
-                                    "name": "TenZ",
-                                    "tag": "00005",
-                                    "character": "Jett",
-                                    "team": "Red",
-                                    "currenttier_patched": "Gold 2",
-                                    "stats": {
-                                        "score": 5000,
-                                        "kills": 20,
-                                        "deaths": 15,
-                                        "assists": 5,
-                                        "headshots": 10,
-                                        "bodyshots": 30,
-                                        "legshots": 2,
-                                    },
-                                    "economy": {
-                                        "spent": {"overall": 50000, "average": 2500.0},
-                                        "loadout_value": {"overall": 70000, "average": 3500.0},
-                                    },
-                                    "damage_made": 3000,
-                                    "damage_received": 2500,
-                                }
-                            ],
-                            "red": [],
-                            "blue": [],
-                        },
-                        "teams": {
-                            "red": {"has_won": True, "rounds_won": 13, "rounds_lost": 9},
-                            "blue": {"has_won": False, "rounds_won": 9, "rounds_lost": 13},
-                        },
-                    }
-                ]
-            })
-        )
-        result = await client.get_match_history("TenZ#00005", "na", 5)
-        assert len(result) == 1
-        assert result[0].metadata.map == "Bind"
+    async def test_stops_on_short_page(self, client):
+        route = respx.get(LIST_URL).mock(
+            return_value=httpx.Response(200, json={"data": [raw_match("a"), raw_match("b")]}))
+        assert len(await client.get_matches("TenZ#00005", 30)) == 2
+        assert route.call_count == 1
 
-
-class TestGetMMR:
     @respx.mock
     @pytest.mark.asyncio
-    async def test_returns_mmr_data(self, client):
-        respx.get("https://api.henrikdev.xyz/valorant/v2/mmr/na/TenZ/00005").mock(
-            return_value=httpx.Response(200, json={
-                "data": {
-                    "name": "TenZ",
-                    "tag": "00005",
-                    "current_data": {
-                        "currenttierpatched": "Gold 2",
-                        "ranking_in_tier": 45,
-                        "mmr_change_to_last_game": 18,
-                        "elo": 945,
-                    },
-                    "highest_rank": {"patched_tier": "Platinum 1", "season": "e5a3"},
-                    "by_season": {},
-                }
-            })
-        )
-        result = await client.get_mmr("TenZ#00005", "na")
-        assert result.current_data.currenttierpatched == "Gold 2"
-        assert result.current_data.elo == 945
+    async def test_reuses_recent_list(self, client):
+        route = respx.get(LIST_URL).mock(
+            return_value=httpx.Response(200, json={"data": [raw_match(f"a{i}") for i in range(10)]}))
+        await client.get_matches("TenZ#00005", 10)
+        await client.get_matches("tenz#00005", 5)
+        assert route.call_count == 1
+
+
+class TestErrors:
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_404_uses_api_message(self, client):
+        respx.get(f"{BASE}/v2/account/Nobody/0000").mock(return_value=httpx.Response(
+            404, json={"errors": [{"code": 22, "message": "Account not found", "status": 404}]}))
+        with pytest.raises(HenrikAPIError, match="Account not found"):
+            await client.get_account("Nobody#0000")
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_retries_short_rate_limit(self, client, monkeypatch):
+        sleeps = []
+
+        async def fake_sleep(s):
+            sleeps.append(s)
+        monkeypatch.setattr(henrik.asyncio, "sleep", fake_sleep)
+        respx.get(LIST_URL).mock(side_effect=[
+            httpx.Response(429, headers={"Retry-After": "2"}),
+            httpx.Response(200, json={"data": [raw_match("a")]}),
+        ])
+        assert len(await client.get_matches("TenZ#00005", 1)) == 1
+        assert sleeps == [2.0]
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_long_rate_limit_raises(self, client):
+        respx.get(LIST_URL).mock(return_value=httpx.Response(429, headers={"Retry-After": "55"}))
+        with pytest.raises(HenrikAPIError, match="Rate limited"):
+            await client.get_matches("TenZ#00005", 1)
+
+
+class TestMatchCache:
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_match_uses_disk_cache(self, tmp_path):
+        client = HenrikClient(api_key="k", cache=MatchCache(tmp_path))
+        route = respx.get(f"{BASE}/v4/match/na/m1").mock(
+            return_value=httpx.Response(200, json={"data": raw_match("m1")}))
+        first = await client.get_match("m1")
+        second = await client.get_match("m1")
+        assert first.metadata.match_id == second.metadata.match_id == "m1"
+        assert route.call_count == 1
+
+    def test_skips_incomplete_matches(self, tmp_path):
+        cache = MatchCache(tmp_path)
+        raw = raw_match("live")
+        raw["metadata"]["is_completed"] = False
+        cache.put(raw)
+        assert cache.get("live") is None

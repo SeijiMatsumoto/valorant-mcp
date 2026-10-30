@@ -12,3 +12,6 @@ wheels/
 
 CLAUDE.md
 PRD.md
+# Real match payloads contain other players' Riot IDs
+sample_*.json
+.DS_Store

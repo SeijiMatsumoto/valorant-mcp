@@ -1,5 +1,6 @@
 import json
 import math
+from collections.abc import Iterable
 from pathlib import Path
 
 import httpx
@@ -8,19 +9,29 @@ CACHE_FILE = Path.home() / ".cache" / "valorant-mcp" / "maps.json"
 MAPS_URL = "https://valorant-api.com/v1/maps"
 
 _cache: dict | None = None
+_refreshed = False
 
 
-async def ensure_loaded() -> None:
-    global _cache
-    if _cache is not None:
+async def ensure_loaded(required: Iterable[str] = ()) -> None:
+    """Load callouts; re-download once if a map we need is missing (new map release)."""
+    global _cache, _refreshed
+    if _cache is None and CACHE_FILE.exists():
+        try:
+            _cache = json.loads(CACHE_FILE.read_text())
+        except (OSError, json.JSONDecodeError):
+            _cache = None
+    missing = _cache is None or any(m and m.lower() not in _cache for m in required)
+    if not missing or (_cache is not None and _refreshed):
         return
-    if CACHE_FILE.exists():
-        _cache = json.loads(CACHE_FILE.read_text())
+    _refreshed = True
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(MAPS_URL, timeout=15.0)
+            response.raise_for_status()
+            data = response.json()["data"]
+    except (httpx.HTTPError, KeyError, ValueError):
+        _cache = _cache or {}
         return
-    async with httpx.AsyncClient() as client:
-        response = await client.get(MAPS_URL)
-        response.raise_for_status()
-        data = response.json()["data"]
 
     maps: dict[str, list[dict]] = {}
     for m in data:
@@ -41,9 +52,12 @@ async def ensure_loaded() -> None:
         if callouts:
             maps[name] = callouts
 
-    CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CACHE_FILE.write_text(json.dumps(maps))
     _cache = maps
+    try:
+        CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        CACHE_FILE.write_text(json.dumps(maps))
+    except OSError:
+        pass
 
 
 def resolve(map_name: str, x: float | None, y: float | None) -> tuple[str | None, str | None]:
@@ -61,3 +75,13 @@ def resolve(map_name: str, x: float | None, y: float | None) -> tuple[str | None
             best_d = d
             best = c
     return (best["region"], best["super"]) if best else (None, None)
+
+
+def zone_label(map_name: str, x: float | None, y: float | None) -> str | None:
+    """Callout with its group, e.g. 'A Main' or 'Mid Courtyard'."""
+    region, super_region = resolve(map_name, x, y)
+    if not region:
+        return None
+    if not super_region or region.lower().split()[0] == super_region.lower():
+        return region
+    return f"{super_region} {region}"

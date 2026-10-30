@@ -1,109 +1,118 @@
 import pytest
+
+from valorant_mcp import agents, callouts
 from valorant_mcp.models import (
-    MatchData, MatchMetadata, MatchPlayer, PlayerStats, PlayerEconomy,
-    EconomySpent, EconomyLoadout, TeamResult,
-    V4MatchData, V4MatchMetadata, V4MatchPlayer, V4PlayerStats,
-    V4Map, V4Agent, V4Tier, V4Team, V4Rounds, V4Damage,
+    AbilityCasts,
+    Damage,
+    EconomyTotal,
+    IdName,
+    Kill,
+    Location,
+    Match,
+    MatchMetadata,
+    MatchPlayer,
+    PlantDefuse,
+    PlayerEconomy,
+    PlayerLocation,
+    PlayerRef,
+    PlayerStats,
+    Queue,
+    Round,
+    RoundEconomy,
+    RoundPlayerStats,
+    RoundPlayerStatsStats,
+    Team,
+    TeamRounds,
+    TierRef,
+    Weapon,
 )
 
+ME = "me"
+RED = ["me", "r2", "r3", "r4", "r5"]
+BLUE = ["b1", "b2", "b3", "b4", "b5"]
 
-def make_player(name="TenZ", tag="00005", character="Jett", team="Red",
-                rank="Gold 2", kills=20, deaths=15, assists=5,
-                headshots=10, bodyshots=30, legshots=2,
-                damage_made=3000, damage_received=2500,
-                spent=50000, avg_spent=2500.0,
-                loadout=70000, avg_loadout=3500.0):
+
+@pytest.fixture(autouse=True)
+def no_content_download(monkeypatch):
+    # Empty callout table (zones resolve to None) and a tiny agent table; nothing is fetched.
+    monkeypatch.setattr(callouts, "_cache", {})
+    monkeypatch.setattr(callouts, "_refreshed", True)
+    monkeypatch.setattr(agents, "_cache", {
+        "jett": {"role": "Duelist", "abilities": {"grenade": "Cloudburst", "ability1": "Updraft",
+                                                   "ability2": "Tailwind", "ultimate": "Blade Storm"}},
+        "sova": {"role": "Initiator", "abilities": {}},
+    })
+    monkeypatch.setattr(agents, "_refreshed", True)
+
+
+def team_of(puuid: str) -> str:
+    return "Red" if puuid in RED else "Blue"
+
+
+def ref(puuid: str) -> PlayerRef:
+    return PlayerRef(puuid=puuid, name=puuid, tag="NA1", team=team_of(puuid))
+
+
+def make_player(puuid: str, agent="Jett", party_id=None, score=4000, kills=15, deaths=15,
+                assists=5, headshots=10, bodyshots=30, legshots=2, dealt=3000, tier=13, casts=None):
     return MatchPlayer(
-        name=name,
-        tag=tag,
-        character=character,
-        team=team,
-        currenttier_patched=rank,
-        stats=PlayerStats(
-            score=(kills * 200 + assists * 50),
-            kills=kills,
-            deaths=deaths,
-            assists=assists,
-            headshots=headshots,
-            bodyshots=bodyshots,
-            legshots=legshots,
-        ),
-        economy=PlayerEconomy(
-            spent=EconomySpent(overall=spent, average=avg_spent),
-            loadout_value=EconomyLoadout(overall=loadout, average=avg_loadout),
-        ),
-        damage_made=damage_made,
-        damage_received=damage_received,
+        puuid=puuid, name=puuid, tag="NA1", team_id=team_of(puuid),
+        party_id=party_id or f"party-{puuid}",
+        agent=IdName(id=agent.lower(), name=agent),
+        stats=PlayerStats(score=score, kills=kills, deaths=deaths, assists=assists,
+                          headshots=headshots, bodyshots=bodyshots, legshots=legshots,
+                          damage=Damage(dealt=dealt, received=2500)),
+        tier=TierRef(id=tier, name=f"Tier {tier}"),
+        ability_casts=AbilityCasts(**(casts or {"grenade": 10, "ability1": 5, "ability2": 5, "ultimate": 1})),
+        economy=PlayerEconomy(spent=EconomyTotal(overall=50000, average=2500.0),
+                              loadout_value=EconomyTotal(overall=70000, average=3500.0)),
     )
 
 
-def make_match(players_all, red_won=True, rounds_won=13, rounds_lost=9,
-               map_name="Bind", matchid="match-001",
-               date="Wednesday, March 25, 2026 03:34 AM"):
-    red_players = [p for p in players_all if p.team == "Red"]
-    blue_players = [p for p in players_all if p.team == "Blue"]
-    return MatchData(
-        metadata=MatchMetadata(
-            map=map_name,
-            game_start_patched=date,
-            matchid=matchid,
-        ),
-        players={
-            "all_players": players_all,
-            "red": red_players,
-            "blue": blue_players,
-        },
-        teams={
-            "red": TeamResult(has_won=red_won, rounds_won=rounds_won, rounds_lost=rounds_lost),
-            "blue": TeamResult(has_won=not red_won, rounds_won=rounds_lost, rounds_lost=rounds_won),
-        },
+def make_kill(round_id: int, t_ms: int, killer: str, victim: str, weapon="Vandal",
+              assistants: tuple[str, ...] = (), at: tuple[int, int] = (0, 0),
+              positions: dict[str, tuple[int, int]] | None = None):
+    """`at` is where the victim died; `positions` are living players' (x, y) at that moment."""
+    return Kill(
+        time_in_round_in_ms=t_ms, time_in_match_in_ms=round_id * 100000 + t_ms, round=round_id,
+        killer=ref(killer), victim=ref(victim), assistants=[ref(a) for a in assistants],
+        location=Location(x=at[0], y=at[1]), weapon=Weapon(name=weapon),
+        player_locations=[PlayerLocation(player=ref(pid), location=Location(x=x, y=y))
+                          for pid, (x, y) in (positions or {}).items()],
     )
 
 
-def make_v4_player(name="TenZ", tag="00005", team_id="Red",
-                   agent_name="Jett", agent_id="add6443a-41bd-e414-f6ad-e58d267f4e95",
-                   rank="Gold 2", tier_id=13,
-                   kills=20, deaths=15, assists=5,
-                   headshots=10, bodyshots=30, legshots=2,
-                   damage_dealt=3000, damage_received=2500,
-                   spent=50000, avg_spent=2500.0,
-                   loadout=70000, avg_loadout=3500.0):
-    return V4MatchPlayer(
-        name=name,
-        tag=tag,
-        team_id=team_id,
-        agent=V4Agent(id=agent_id, name=agent_name),
-        stats=V4PlayerStats(
-            score=(kills * 200 + assists * 50),
-            kills=kills,
-            deaths=deaths,
-            assists=assists,
-            headshots=headshots,
-            bodyshots=bodyshots,
-            legshots=legshots,
-            damage=V4Damage(dealt=damage_dealt, received=damage_received),
-        ),
-        tier=V4Tier(id=tier_id, name=rank),
-        economy=PlayerEconomy(
-            spent=EconomySpent(overall=spent, average=avg_spent),
-            loadout_value=EconomyLoadout(overall=loadout, average=avg_loadout),
-        ),
-    )
+def make_round(round_id: int, winner: str, planter: str | None = None, role: str | None = None,
+               red_loadout=4500, blue_loadout=4500, my_damage=0, my_loadout=None, site="A"):
+    stats = []
+    for pid in RED + BLUE:
+        stats.append(RoundPlayerStats(
+            player=ref(pid),
+            stats=RoundPlayerStatsStats(score=0, kills=0, headshots=1, bodyshots=2, legshots=0),
+            economy=RoundEconomy(loadout_value=(my_loadout if pid == ME and my_loadout is not None
+                                                else red_loadout if pid in RED else blue_loadout),
+                                 remaining=0, weapon=Weapon(name="Vandal")),
+            damage_events=[{"player": ref("b1"), "damage": my_damage, "headshots": 0,
+                            "bodyshots": 1, "legshots": 0}] if pid == ME and my_damage else [],
+        ))
+    plant = PlantDefuse(round_time_in_ms=30000, site=site, location=Location(x=0, y=0),
+                        player=ref(planter)) if planter else None
+    return Round(id=round_id, result="Elimination", winning_team=winner,
+                 winning_team_role=role, plant=plant, stats=stats)
 
 
-def make_v4_match(players, red_won=True, rounds_won=13, rounds_lost=9,
-                  map_name="Bind", match_id="match-v4-001",
-                  started_at="2026-03-25T03:34:00Z", region="na"):
-    return V4MatchData(
-        metadata=V4MatchMetadata(
-            match_id=match_id,
-            map=V4Map(id="map-001", name=map_name),
-            started_at=started_at,
-            region=region,
-        ),
+def make_match(rounds: list[Round], kills: list[Kill] | None = None, players=None,
+               match_id="m1", started_at="2026-10-01T20:00:00Z", map_name="Ascent",
+               queue="competitive"):
+    players = players or [make_player(p) for p in RED + BLUE]
+    red_won = sum(r.winning_team == "Red" for r in rounds)
+    blue_won = len(rounds) - red_won
+    return Match(
+        metadata=MatchMetadata(match_id=match_id, map=IdName(id="map", name=map_name),
+                               started_at=started_at, queue=Queue(id=queue)),
         players=players,
-        teams=[
-            V4Team(team_id="Red", rounds=V4Rounds(won=rounds_won, lost=rounds_lost), won=red_won),
-            V4Team(team_id="Blue", rounds=V4Rounds(won=rounds_lost, lost=rounds_won), won=not red_won),
-        ],
+        teams=[Team(team_id="Red", rounds=TeamRounds(won=red_won, lost=blue_won), won=red_won > blue_won),
+               Team(team_id="Blue", rounds=TeamRounds(won=blue_won, lost=red_won), won=blue_won > red_won)],
+        rounds=rounds,
+        kills=kills or [],
     )
