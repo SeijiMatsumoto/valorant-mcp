@@ -186,9 +186,14 @@ async def test_all_tools(client, real_callouts, monkeypatch):
     assert rr["history"]
 
     history = json.loads(await server.get_match_history(PLAYER, 5))
-    assert len(history) == 5
+    assert len(history["matches"]) == 5
+    assert "more_history" in history["scope"]
 
-    match_id = history[0]["match_id"]
+    act = json.loads(await server.get_match_history(PLAYER, season="current"))
+    assert act["scope"]["season"] and act["matches"]
+    assert len(act["matches"]) == act["scope"]["matches_in_act_used"]
+
+    match_id = history["matches"][0]["match_id"]
     details = json.loads(await server.get_match_details(match_id))
     assert len(details["rounds"]) > 0
     narrative = json.loads(await server.get_match_details(

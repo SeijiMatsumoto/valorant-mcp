@@ -1,6 +1,7 @@
 import json
 import logging
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from typing import Annotated, Literal
 
 from mcp.server.fastmcp import FastMCP
@@ -37,6 +38,11 @@ Which tool to use:
 - get_site_report: team site choices, post-plant and retake results per map.
 - compare_periods: what changed recently. get_rr_history: which games gained/lost RR.
 - get_match_history / get_match_details: find and drill into specific games as evidence.
+
+History depth: each tool analyzes the last `count` games (defaults 10-20, max 50). For a whole act
+pass season='current' or e.g. 'e11a6' (up to 100 games). Every response has a `scope` block saying
+what was analyzed; if it has `more_history`, older games exist — fetch more instead of telling the
+user the data stops there.
 Metric definitions are in the resource valorant://glossary.
 
 Interpreting data:
@@ -63,6 +69,7 @@ henrik_client = HenrikClient(
 )
 
 MAX_MATCHES = 50
+SEASON_MAX = 100  # an act can be 100+ games; ~10-20 API requests at this size
 
 Username = Annotated[str, Field(description="Riot ID as name#TAG, e.g. 'player#NA1'")]
 Count = Annotated[int, Field(description="Number of recent matches to analyze (max 50)", ge=1, le=MAX_MATCHES)]
@@ -71,6 +78,10 @@ Mode = Annotated[Literal["competitive", "unrated", "premier", "swiftplay", "spik
 MapFilter = Annotated[str | None, Field(description="Only matches on this map, e.g. 'Ascent'")]
 AgentFilter = Annotated[str | None, Field(
     description="Only matches on this agent, e.g. 'Sova'. Fetches extra history to fill `count`.")]
+Season = Annotated[str | None, Field(
+    description="Analyze a whole act instead of the last `count` games: 'current' (the act of the "
+                "most recent game) or an act like 'e11a6'. When set, `count` is ignored and up to "
+                f"{SEASON_MAX} matches from that act are used.")]
 Region = Annotated[str | None, Field(description="na, eu, ap, kr, latam or br. Defaults to the server setting.")]
 
 
@@ -92,16 +103,58 @@ def _puuid_from_matches(matches: list[Match], username: str) -> str | None:
 class Loaded:
     matches: list[Match]
     records: list[MatchRecord]
+    scope: dict = field(default_factory=dict)
+
+
+def _act_key(match: Match) -> tuple[int, int] | None:
+    short = match.metadata.season.short if match.metadata.season else None
+    found = re.fullmatch(r"e(\d+)a(\d+)", (short or "").lower())
+    return (int(found[1]), int(found[2])) if found else None
+
+
+def _act_name(key: tuple[int, int] | None) -> str | None:
+    return f"e{key[0]}a{key[1]}" if key else None
+
+
+async def _fetch_season(username: str, season: str, mode: str, map_name: str | None,
+                        region: str | None) -> tuple[list[Match], dict]:
+    if season.lower() == "current":
+        target = None
+    elif (found := re.fullmatch(r"e(\d+)a(\d+)", season.strip().lower())):
+        target = (int(found[1]), int(found[2]))
+    else:
+        raise ValueError("season must be 'current' or an act like 'e11a6'")
+    state = {"target": target}
+
+    def older(m: Match) -> bool:
+        key = _act_key(m)
+        if state["target"] is None:
+            state["target"] = key  # 'current' = act of the newest game
+        return key is not None and state["target"] is not None and key < state["target"]
+
+    fetched = await henrik_client.get_matches(username, SEASON_MAX, mode, map_name, region,
+                                              stop_when=older)
+    matches = [m for m in fetched if _act_key(m) == state["target"]]
+    reached_older = any(older(m) for m in fetched)
+    scope = {"season": _act_name(state["target"]), "matches_in_act_used": len(matches)}
+    if not reached_older and len(fetched) >= SEASON_MAX:
+        scope["note"] = f"Act has more than {SEASON_MAX} games; only the most recent {SEASON_MAX} were used."
+    return matches, scope
 
 
 async def _load(username: str, count: int, mode: str, map_name: str | None,
-                agent: str | None, region: str | None) -> Loaded:
+                agent: str | None, region: str | None, season: str | None = None) -> Loaded:
     count = max(1, min(count, MAX_MATCHES))
-    # Agent filtering happens after fetching, so pull extra history to fill `count`.
-    fetch = min(MAX_MATCHES, count * 3) if agent else count
-    matches = await henrik_client.get_matches(username, fetch, mode, map_name, region)
+    if season:
+        matches, scope = await _fetch_season(username, season, mode, map_name, region)
+        count = len(matches)
+    else:
+        # Agent filtering happens after fetching, so pull extra history to fill `count`.
+        fetch = min(MAX_MATCHES, count * 3) if agent else count
+        matches = await henrik_client.get_matches(username, fetch, mode, map_name, region)
+        scope = {"requested_count": count}
     if not matches:
-        return Loaded([], [])
+        return Loaded([], [], {**scope, "matches_used": 0})
     puuid = _puuid_from_matches(matches, username) or (await henrik_client.get_account(username)).puuid
     await callouts.ensure_loaded({m.metadata.map.name for m in matches})
     await agents.ensure_loaded({p.agent.name for m in matches for p in m.players})
@@ -110,12 +163,11 @@ async def _load(username: str, count: int, mode: str, map_name: str | None,
         records = [r for r in records if r.agent.casefold() == agent.casefold()]
     records = sorted(records, key=lambda r: r.started_at, reverse=True)[:count]
     keep = {r.match_id for r in records}
-    return Loaded([m for m in matches if m.metadata.match_id in keep], records)
-
-
-async def _player_records(username: str, count: int, mode: str, map_name: str | None,
-                          agent: str | None, region: str | None) -> list[MatchRecord]:
-    return (await _load(username, count, mode, map_name, agent, region)).records
+    scope["matches_used"] = len(records)
+    if not season and len(records) >= count and count < MAX_MATCHES:
+        scope["more_history"] = (f"This is only the last {count} games; older games are available. "
+                                 f"Pass a larger count (max {MAX_MATCHES}) or season='current' for the whole act.")
+    return Loaded([m for m in matches if m.metadata.match_id in keep], records, scope)
 
 
 @mcp.tool()
@@ -154,6 +206,7 @@ async def get_performance_report(
     mode: Mode = "competitive",
     map: MapFilter = None,
     agent: AgentFilter = None,
+    season: Season = None,
     sections: Annotated[list[Literal["overview", "sides", "economy", "agents", "maps",
                                      "positioning", "weapons", "context"]] | None,
                         Field(description="Subset of sections to return; omit for all")] = None,
@@ -172,9 +225,10 @@ async def get_performance_report(
     - weapons: kills by weapon, median kill distance, K/D by engagement range, results by weapon held
     - context: solo vs party, lobby strength (enemy rank vs yours), game number within a session
     Numbers are absolute; use get_benchmarks to judge them against same-rank players."""
-    records = await _player_records(username, count, mode, map, agent, region)
-    report = {"player": username, "filters": {"mode": mode, "map": map, "agent": agent}}
-    report.update(build_report(records, list(sections) if sections else list(SECTIONS)))
+    loaded = await _load(username, count, mode, map, agent, region, season)
+    report = {"player": username, "filters": {"mode": mode, "map": map, "agent": agent},
+              "scope": loaded.scope}
+    report.update(build_report(loaded.records, list(sections) if sections else list(SECTIONS)))
     return _dump(report)
 
 
@@ -191,7 +245,7 @@ async def compare_periods(
     Shows key metrics side by side with deltas — use it to answer "what changed?" or
     "am I improving?". Also lists the agents/maps played in each block. Check the win_pct
     confidence ranges before calling a change real."""
-    records = await _player_records(username, recent + previous, mode, None, agent, region)
+    records = (await _load(username, recent + previous, mode, None, agent, region)).records
     return _dump(compare(records[:recent], records[recent:recent + previous],
                          f"last_{recent}", f"previous_{previous}"))
 
@@ -203,8 +257,8 @@ async def get_rr_history(username: Username, count: Count = 20, region: Region =
     gain or lose RR, and RR performance bonuses/penalties."""
     count = max(1, min(count, MAX_MATCHES))
     history = await henrik_client.get_mmr_history(username, count, region)
-    records = {r.match_id: r for r in await _player_records(username, count, "competitive",
-                                                             None, None, region)}
+    loaded = await _load(username, count, "competitive", None, None, region)
+    records = {r.match_id: r for r in loaded.records}
     rows = []
     for e in history:
         row = {
@@ -233,13 +287,14 @@ async def get_match_history(
     mode: Mode = "competitive",
     map: MapFilter = None,
     agent: AgentFilter = None,
+    season: Season = None,
     region: Region = None,
 ) -> str:
-    """List recent matches (max 50), one compact row each: map, agent, result, score, KDA,
-    ACS, ADR, HS%, KAST, first kills/deaths, ACS rank on team, party size. Use the
-    match_id with get_match_details to drill in."""
-    records = await _player_records(username, count, mode, map, agent, region)
-    return _dump([match_line(r) for r in records])
+    """List matches, one compact row each: map, agent, result, score, KDA, ACS, ADR, HS%, KAST,
+    first kills/deaths, ACS rank on team, party size. Defaults to the last 10; pass a larger
+    `count` (max 50) or `season` for a whole act. Use the match_id with get_match_details."""
+    loaded = await _load(username, count, mode, map, agent, region, season)
+    return _dump({"scope": loaded.scope, "matches": [match_line(r) for r in loaded.records]})
 
 
 @mcp.tool()
@@ -271,6 +326,7 @@ async def get_benchmarks(
     mode: Mode = "competitive",
     map: MapFilter = None,
     agent: AgentFilter = None,
+    season: Season = None,
     region: Region = None,
 ) -> str:
     """Judge whether the player's numbers are good or bad by comparing them with the other 9
@@ -281,9 +337,9 @@ async def get_benchmarks(
     - avg_place_in_lobby_of_10: your average placement among all 10 players (1 = best)
     - by_agent: for each agent played 2+ times, you vs everyone else on that agent in your lobbies,
       incl. casts per round of each ability and Henrik's performance breakdown/ratings when available"""
-    loaded = await _load(username, count, mode, map, agent, region)
+    loaded = await _load(username, count, mode, map, agent, region, season)
     everyone = {m.metadata.match_id: analyze_all_players(m) for m in loaded.matches}
-    return _dump({"player": username, **build_benchmarks(loaded.records, everyone)})
+    return _dump({"player": username, "scope": loaded.scope, **build_benchmarks(loaded.records, everyone)})
 
 
 @mcp.tool()
@@ -293,6 +349,7 @@ async def get_teamplay_report(
     mode: Mode = "competitive",
     map: MapFilter = None,
     agent: AgentFilter = None,
+    season: Season = None,
     region: Region = None,
 ) -> str:
     """Spacing and trading, from every player's position at each kill:
@@ -303,8 +360,8 @@ async def get_teamplay_report(
     - the map/side/callout spots where you most often die isolated and untraded
     - results by party size and win rate with each party member
     Use for "why do I die alone", "am I trading my teammates", "who should I queue with"."""
-    records = await _player_records(username, count, mode, map, agent, region)
-    return _dump({"player": username, **build_teamplay(records)})
+    loaded = await _load(username, count, mode, map, agent, region, season)
+    return _dump({"player": username, "scope": loaded.scope, **build_teamplay(loaded.records)})
 
 
 @mcp.tool()
@@ -313,14 +370,15 @@ async def get_site_report(
     count: Count = 20,
     mode: Mode = "competitive",
     map: MapFilter = None,
+    season: Season = None,
     region: Region = None,
 ) -> str:
     """Team-level site play per map: on attack, plant rate, which site you plant and the
     post-plant win % on each; on defense, which site the enemy plants and your retake/hold win %;
     plus win % in rounds with no plant. Use for "which site should we hit on Bind" or
     "are we bad at retakes"."""
-    records = await _player_records(username, count, mode, map, None, region)
-    return _dump({"player": username, **build_sites(records)})
+    loaded = await _load(username, count, mode, map, None, region, season)
+    return _dump({"player": username, "scope": loaded.scope, **build_sites(loaded.records)})
 
 
 @mcp.resource("valorant://glossary", mime_type="text/markdown")

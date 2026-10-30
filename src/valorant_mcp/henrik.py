@@ -1,5 +1,6 @@
 import asyncio
 import time
+from collections.abc import Callable
 
 import httpx
 
@@ -77,15 +78,22 @@ class HenrikClient:
         return [MMRHistoryEntry(**e) for e in body["data"]]
 
     async def get_matches(self, username: str, count: int, mode: str | None = "competitive",
-                          map_name: str | None = None, region: str | None = None) -> list[Match]:
-        """Recent full v4 matches, newest first. Pages through v4/matches 10 at a time."""
+                          map_name: str | None = None, region: str | None = None,
+                          stop_when: Callable[[Match], bool] | None = None) -> list[Match]:
+        """Recent full v4 matches, newest first. Pages through v4/matches 10 at a time.
+
+        Stops after `count` matches, or after the page containing a match for which
+        `stop_when` is true (e.g. one from an older act).
+        """
         name, tag = parse_username(username)
         region = region or self.region
         key = (name.lower(), tag.lower(), region, mode, (map_name or "").lower())
 
         cached = self._lists.get(key)
-        if cached and time.monotonic() - cached[0] < LIST_TTL_S and len(cached[1]) >= count:
-            return cached[1][:count]
+        if cached and time.monotonic() - cached[0] < LIST_TTL_S:
+            fresh = cached[1]
+            if len(fresh) >= count or (stop_when and any(stop_when(m) for m in fresh)):
+                return fresh[:count]
 
         matches: list[Match] = []
         seen: set[str] = set()
@@ -103,7 +111,7 @@ class HenrikClient:
                 if match.metadata.match_id not in seen:
                     seen.add(match.metadata.match_id)
                     matches.append(match)
-            if len(page) < PAGE_SIZE:
+            if len(page) < PAGE_SIZE or (stop_when and any(stop_when(m) for m in matches[-len(page):])):
                 break
             start += PAGE_SIZE
 

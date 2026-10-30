@@ -1,6 +1,17 @@
+import os
+
 import pytest
+from pydantic import ValidationError
 
 from valorant_mcp import agents, callouts
+from valorant_mcp.config import Settings
+
+# server.py builds Settings at import time. Without a real key (env or .env), use a dummy so the
+# offline tests can import it; they mock all HTTP. A real key is left alone for the live tests.
+try:
+    Settings()
+except ValidationError:
+    os.environ["HENRIK_API_KEY"] = "test-key"
 from valorant_mcp.models import (
     AbilityCasts,
     Damage,
@@ -21,6 +32,7 @@ from valorant_mcp.models import (
     RoundEconomy,
     RoundPlayerStats,
     RoundPlayerStatsStats,
+    SeasonRef,
     Team,
     TeamRounds,
     TierRef,
@@ -103,13 +115,14 @@ def make_round(round_id: int, winner: str, planter: str | None = None, role: str
 
 def make_match(rounds: list[Round], kills: list[Kill] | None = None, players=None,
                match_id="m1", started_at="2026-10-01T20:00:00Z", map_name="Ascent",
-               queue="competitive"):
+               queue="competitive", season="e11a6"):
     players = players or [make_player(p) for p in RED + BLUE]
     red_won = sum(r.winning_team == "Red" for r in rounds)
     blue_won = len(rounds) - red_won
     return Match(
         metadata=MatchMetadata(match_id=match_id, map=IdName(id="map", name=map_name),
-                               started_at=started_at, queue=Queue(id=queue)),
+                               started_at=started_at, queue=Queue(id=queue),
+                               season=SeasonRef(id=season, short=season)),
         players=players,
         teams=[Team(team_id="Red", rounds=TeamRounds(won=red_won, lost=blue_won), won=red_won > blue_won),
                Team(team_id="Blue", rounds=TeamRounds(won=blue_won, lost=red_won), won=blue_won > red_won)],

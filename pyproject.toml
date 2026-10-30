@@ -1,6 +1,6 @@
 [project]
 name = "valorant-mcp"
-version = "0.4.1"
+version = "0.4.2"
 description = "MCP server for Valorant match analysis via Henrik's API"
 readme = "README.md"
 requires-python = ">=3.13"
