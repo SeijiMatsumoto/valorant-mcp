@@ -1,11 +1,11 @@
 [project]
 name = "valorant-mcp"
-version = "0.4.0"
+version = "0.4.1"
 description = "MCP server for Valorant match analysis via Henrik's API"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "mcp[cli]",
+    "mcp[cli]>=1.26,<2",
     "httpx",
     "pydantic",
     "pydantic_settings",
